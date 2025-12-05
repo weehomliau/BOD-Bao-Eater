@@ -2,73 +2,55 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>吃包大胃王 - 极速版</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>吃包子大挑战 - 极速包子雨版</title>
     <style>
-        :root {
-            --glass-bg: rgba(255, 255, 255, 0.15);
-            --glass-border: rgba(255, 255, 255, 0.3);
-            --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
-            --text-primary: rgba(255, 255, 255, 0.95);
-            --text-secondary: rgba(255, 255, 255, 0.7);
-            --sky-blue: #7FCDFF;
-            --sky-gold: #F5D76E;
-        }
-
         body {
             margin: 0;
             overflow: hidden;
-            background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%);
-            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #1a1a1a;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
-            /* 动态背景动画 */
-            background-size: 400% 400%;
-            animation: gradientBG 15s ease infinite;
         }
 
-        @keyframes gradientBG {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
-        }
-
-        #game-container {
+        #game-wrapper {
             position: relative;
-            width: 100%;
-            height: 100%;
-            max-width: 100%;
+            width: 640px;
+            height: 480px;
+            border-radius: 12px;
             overflow: hidden;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+            border: 4px solid #333;
+            background: #000;
         }
 
-        /* 视频层：作为背景 */
+        /* 视频层：镜像翻转 */
         video {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
+            transform: scaleX(-1);
             object-fit: cover;
-            transform: scaleX(-1); /* 镜像 */
-            z-index: 0;
-            opacity: 0.8; 
-            filter: contrast(1.1) saturate(1.1);
+            z-index: 1;
         }
 
-        /* 游戏画布 */
+        /* 画布层：镜像翻转 */
         canvas {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            transform: scaleX(-1); /* 镜像翻转以匹配视频 */
-            z-index: 1;
+            transform: scaleX(-1);
+            z-index: 2;
         }
 
-        /* UI 层 */
+        /* UI层 */
         #ui-layer {
             position: absolute;
             top: 0;
@@ -77,672 +59,457 @@
             height: 100%;
             z-index: 10;
             pointer-events: none;
-            box-sizing: border-box;
-            padding: 24px;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
         }
 
-        /* iOS 16 Glassmorphism 风格组件 */
-        .glass-panel {
-            background: var(--glass-bg);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid var(--glass-border);
-            box-shadow: var(--glass-shadow);
-            border-radius: 24px;
-            color: var(--text-primary);
-        }
-
-        .hud-header {
+        .hud-top {
             display: flex;
             justify-content: space-between;
+            padding: 20px;
             align-items: center;
-            padding: 12px 20px;
-            width: 100%;
-            max-width: 500px;
-            margin: 0 auto;
         }
 
-        .score-box {
+        .hud-group {
             display: flex;
-            flex-direction: column;
-            align-items: center;
+            gap: 15px;
         }
-        .score-label {
-            font-size: 12px;
-            color: var(--text-secondary);
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 2px;
-        }
-        .score-value {
+
+        #score-board, #timer-board {
+            color: #ffcc00;
             font-size: 28px;
-            font-weight: 700;
-            font-feature-settings: "tnum";
-            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
-        }
-
-        .time-box {
-            font-size: 24px;
-            font-weight: 600;
-            font-feature-settings: "tnum";
-        }
-        .time-box.danger {
-            color: #FF6B6B;
-            text-shadow: 0 0 10px rgba(255, 107, 107, 0.5);
-        }
-
-        .status-pill {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 16px;
-            border-radius: 50px;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.3s ease;
+            font-weight: 900;
+            text-shadow: 3px 3px 0 #000;
+            background: rgba(0,0,0,0.6);
+            padding: 8px 15px;
+            border-radius: 20px;
+            min-width: 100px;
+            text-align: center;
         }
         
+        #timer-board {
+            color: #00ccff;
+        }
+
+        #status-indicator {
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            background: rgba(0,0,0,0.6);
+            padding: 8px 15px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
         .status-dot {
-            width: 8px;
-            height: 8px;
+            width: 12px;
+            height: 12px;
             border-radius: 50%;
-            background: rgba(255, 255, 255, 0.4);
-            box-shadow: 0 0 5px rgba(255,255,255,0.2);
-            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            background-color: red;
+            transition: background-color 0.2s;
         }
 
-        .active-state {
-            background: rgba(255, 255, 255, 0.25);
-            border-color: rgba(255, 255, 255, 0.5);
-        }
-        .active-state .status-dot {
-            background: #4ade80;
-            transform: scale(1.2);
-            box-shadow: 0 0 10px #4ade80;
-        }
-
-        /* 模态框 */
-        #modal-overlay {
+        #overlay-screen {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.4);
-            backdrop-filter: blur(8px);
-            z-index: 20;
+            background: rgba(0,0,0,0.85);
+            color: white;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
+            z-index: 20;
             pointer-events: auto;
-            transition: opacity 0.3s ease;
-        }
-
-        .card {
-            width: 320px;
-            padding: 32px;
             text-align: center;
-            transform: translateY(0);
-            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
 
-        h1 {
-            margin: 0 0 12px;
-            font-size: 28px;
-            background: linear-gradient(to right, #fff, #e0e0e0);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
+        .hidden { display: none !important; }
 
-        p {
-            font-size: 16px;
-            line-height: 1.6;
-            color: var(--text-secondary);
-            margin-bottom: 24px;
-        }
-
-        .btn {
-            background: rgba(255, 255, 255, 0.9);
-            color: #333;
+        button {
+            background: #ff4757;
             border: none;
-            padding: 14px 32px;
-            border-radius: 50px;
-            font-size: 18px;
-            font-weight: 600;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 20px;
+            margin: 10px 2px;
             cursor: pointer;
-            transition: transform 0.1s, box-shadow 0.2s, background 0.2s;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            border-radius: 50px;
+            font-weight: bold;
+            transition: transform 0.1s;
         }
-        .btn:hover {
-            transform: translateY(-2px);
-            background: #fff;
-            box-shadow: 0 6px 20px rgba(0,0,0,0.15);
-        }
-        .btn:active {
-            transform: scale(0.95);
-        }
+        button:active { transform: scale(0.95); }
 
-        .hidden {
-            opacity: 0;
-            pointer-events: none;
-        }
-        .hidden .card {
-            transform: translateY(20px);
-        }
-
-        /* 调试信息样式 (可选，不需要时可删除) */
-        #debug-info {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            color: rgba(255,255,255,0.5);
-            font-size: 10px;
-            z-index: 5;
-        }
+        /* 嘴巴张开时的视觉提示 */
+        .mouth-active { background-color: #2ed573 !important; box-shadow: 0 0 10px #2ed573; }
     </style>
 </head>
 <body>
 
-<div id="game-container">
-    <video id="video" playsinline muted></video>
-    <canvas id="game-canvas"></canvas>
-
+<div id="game-wrapper">
+    <video id="video" playsinline></video>
+    <canvas id="output"></canvas>
+    
     <div id="ui-layer">
-        <!-- 调试信息: 方便你在手机上看到是否识别到了 -->
-        <div id="debug-info">Openness: 0.00</div>
-
-        <div class="hud-header glass-panel">
-            <div class="score-box">
-                <span class="score-label">数量</span>
-                <span id="score-val" class="score-value">0</span>
+        <div class="hud-top">
+            <div class="hud-group">
+                <div id="score-board">得分: 0</div>
+                <div id="timer-board">时间: 90</div>
             </div>
-            
-            <div id="mouth-status" class="status-pill glass-panel">
-                <div class="status-dot"></div>
-                <span id="status-text">张嘴开吃</span>
-            </div>
-
-            <div class="score-box">
-                <span class="score-label">倒计时</span>
-                <span id="time-val" class="time-box">90</span>
+            <div id="status-indicator">
+                <div id="mouth-dot" class="status-dot"></div>
+                <span id="mouth-text">请张大嘴巴</span>
             </div>
         </div>
     </div>
 
-    <div id="modal-overlay">
-        <div class="card glass-panel">
-            <h1 id="modal-title">吃包大胃王</h1>
-            <p id="modal-desc">
-                美味的热包子掉下来了！<br>
-                张大嘴巴，把它们统统吃掉。<br>
-                小心混在里面的炸弹。
-            </p>
-            <button id="action-btn" class="btn hidden">开始挑战</button>
-            <p id="loading-text" style="font-size:14px; margin-top:15px; margin-bottom:0;">正在加热蒸笼 (AI加载中)...</p>
-        </div>
+    <!-- 遮罩层 -->
+    <div id="overlay-screen">
+        <h1 id="overlay-title">吃包子大作战 (包子雨版)</h1>
+        <p id="overlay-desc">正在初始化...</p>
+        <button id="start-btn" class="hidden">开始游戏</button>
     </div>
 </div>
 
-<!-- TensorFlow.js Library -->
+<!-- 引入库 -->
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection"></script>
 
 <script>
-    /**
-     * 游戏配置
-     */
     const CONFIG = {
-        // 重要修改：不再使用 10px 阈值，改用 0.08 的比例阈值
-        // 0.08 意味着嘴巴张开的高度至少是宽度的 8%
-        mouthRatioThreshold: 0.1, 
-        baseSpeed: 20,          
-        glowColor: '#F5D76E',   
-        darkColor: '#2D3436',   
-        particleCount: 15,      
-        gameDuration: 90        
+        width: 640,
+        height: 480,
+        mouthThreshold: 10, 
+        baseSpeed: 20.0,        // 基础速度 20
+        initialSpawnRate: 800,  // 初始间隔从 2000 降到 800 (更快)
+        minSpawnRate: 150,      // 最小间隔从 400 降到 150 (极速)
+        gameDuration: 90        // 游戏时长 90 秒
     };
 
-    /**
-     * 音效系统
-     */
+    // 音效
     const AudioSys = {
         ctx: null,
-        notes: [523.25, 587.33, 659.25, 783.99, 880.00, 1046.50],
-        
-        init() {
+        init: function() {
             window.AudioContext = window.AudioContext || window.webkitAudioContext;
             this.ctx = new AudioContext();
         },
-
-        playChime() {
+        playEat: function() {
             if (!this.ctx) return;
             const osc = this.ctx.createOscillator();
             const gain = this.ctx.createGain();
-            const note = this.notes[Math.floor(Math.random() * this.notes.length)];
             osc.type = 'sine';
-            osc.frequency.setValueAtTime(note, this.ctx.currentTime);
-            gain.gain.setValueAtTime(0, this.ctx.currentTime);
-            gain.gain.linearRampToValueAtTime(0.3, this.ctx.currentTime + 0.05);
-            gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 1.5);
+            osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.5, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
             osc.connect(gain);
             gain.connect(this.ctx.destination);
             osc.start();
-            osc.stop(this.ctx.currentTime + 1.5);
+            osc.stop(this.ctx.currentTime + 0.15);
         },
-
-        playDarkness() {
+        playExplosion: function() {
             if (!this.ctx) return;
             const osc = this.ctx.createOscillator();
             const gain = this.ctx.createGain();
-            osc.type = 'triangle';
+            osc.type = 'sawtooth';
             osc.frequency.setValueAtTime(100, this.ctx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(50, this.ctx.currentTime + 0.5);
-            gain.gain.setValueAtTime(0.5, this.ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(10, this.ctx.currentTime + 0.5);
+            gain.gain.setValueAtTime(1, this.ctx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
             osc.connect(gain);
             gain.connect(this.ctx.destination);
             osc.start();
             osc.stop(this.ctx.currentTime + 0.5);
+        },
+        playTimeUp: function() {
+            if (!this.ctx) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(400, this.ctx.currentTime);
+            osc.frequency.linearRampToValueAtTime(300, this.ctx.currentTime + 0.3);
+            gain.gain.setValueAtTime(0.5, this.ctx.currentTime);
+            gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.3);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.3);
         }
     };
 
-    /**
-     * 粒子类
-     */
-    class Particle {
-        constructor(x, y, color) {
-            this.x = x;
-            this.y = y;
-            this.color = color;
-            const angle = Math.random() * Math.PI * 2;
-            const speed = Math.random() * 3 + 1;
-            this.vx = Math.cos(angle) * speed;
-            this.vy = Math.sin(angle) * speed;
-            this.life = 1.0;
-            this.decay = Math.random() * 0.03 + 0.02;
-            this.size = Math.random() * 4 + 2;
-        }
+    let detector, video, ctx, canvas;
+    let isGameRunning = false;
+    let score = 0;
+    let items = []; 
+    let lastSpawnTime = 0;
+    let gameStartTime = 0; 
+    let mouthData = { open: false, x: 0, y: 0 };
 
-        update() {
-            this.x += this.vx;
-            this.y += this.vy;
-            this.life -= this.decay;
-            this.size *= 0.95; 
-        }
+    const scoreEl = document.getElementById('score-board');
+    const timerEl = document.getElementById('timer-board');
+    const mouthDotEl = document.getElementById('mouth-dot');
+    const mouthTextEl = document.getElementById('mouth-text');
+    const overlayEl = document.getElementById('overlay-screen');
+    const overlayTitle = document.getElementById('overlay-title');
+    const overlayDesc = document.getElementById('overlay-desc');
+    const startBtn = document.getElementById('start-btn');
 
-        draw(ctx) {
-            ctx.save();
-            ctx.globalAlpha = this.life;
-            ctx.fillStyle = this.color;
-            ctx.shadowBlur = 10;
-            ctx.shadowColor = this.color;
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
-        }
-    }
+    async function main() {
+        video = document.getElementById('video');
+        canvas = document.getElementById('output');
+        ctx = canvas.getContext('2d');
 
-    /**
-     * 游戏状态管理
-     */
-    let state = {
-        running: false,
-        score: 0,
-        time: CONFIG.gameDuration,
-        detector: null,
-        items: [],
-        particles: [],
-        lastSpawn: 0,
-        mouth: { x: 0, y: 0, open: false, width: 0 },
-        loopId: null,
-        startTime: 0
-    };
+        canvas.width = CONFIG.width;
+        canvas.height = CONFIG.height;
+        video.width = CONFIG.width;
+        video.height = CONFIG.height;
 
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('game-canvas');
-    const ctx = canvas.getContext('2d');
-    const ui = {
-        score: document.getElementById('score-val'),
-        time: document.getElementById('time-val'),
-        mouthStatus: document.getElementById('mouth-status'),
-        statusText: document.getElementById('status-text'),
-        modal: document.getElementById('modal-overlay'),
-        modalTitle: document.getElementById('modal-title'),
-        modalDesc: document.getElementById('modal-desc'),
-        btn: document.getElementById('action-btn'),
-        loading: document.getElementById('loading-text'),
-        debug: document.getElementById('debug-info')
-    };
-
-    /**
-     * 初始化
-     */
-    async function init() {
-        function resize() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        }
-        window.addEventListener('resize', resize);
-        resize();
-
+        // 1. 摄像头
         try {
-            // 性能优化：限制分辨率为 480x360，减少计算量，适合移动端和Web
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { 
-                    facingMode: 'user', 
-                    width: { ideal: 480 }, 
-                    height: { ideal: 360 } 
-                },
+                video: { width: CONFIG.width, height: CONFIG.height },
                 audio: false
             });
             video.srcObject = stream;
-            // 必须等待视频加载完成
-            await new Promise(r => video.onloadedmetadata = () => {
-                video.play();
-                r();
-            });
+            await new Promise(resolve => video.onloadedmetadata = resolve);
+            video.play();
         } catch (e) {
-            ui.loading.innerText = "无法访问摄像头，请检查权限。";
+            overlayDesc.innerHTML = "无法打开摄像头，请确保允许权限。";
             return;
         }
 
+        // 2. 加载模型
         try {
+            overlayDesc.innerText = "加载 AI 模型中...";
             await tf.ready();
-            // 加载模型
-            state.detector = await faceLandmarksDetection.createDetector(
+            
+            detector = await faceLandmarksDetection.createDetector(
                 faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
-                { 
-                    runtime: 'tfjs', 
-                    maxFaces: 1,
-                    refineLandmarks: false // 关闭精细点以提高速度
-                }
+                { runtime: 'tfjs', maxFaces: 1 }
             );
             
-            // 预热：先跑一次检测，确保真正准备好了再显示按钮
-            ui.loading.innerText = "正在校准面部...";
-            await state.detector.estimateFaces(video);
-
-            ui.loading.style.display = 'none';
-            ui.btn.classList.remove('hidden');
-            ui.btn.addEventListener('click', startGame);
-
-            trackFace();
+            overlayDesc.innerText = "准备就绪！";
+            startBtn.classList.remove('hidden');
+            startBtn.addEventListener('click', startGame);
+            
+            detectFaceLoop();
         } catch (e) {
-            ui.loading.innerText = "模型加载慢/失败，请刷新重试。";
+            overlayDesc.innerText = "模型加载失败，请刷新重试。";
             console.error(e);
         }
     }
 
-    /**
-     * 面部追踪循环 (独立于游戏循环)
-     */
-    async function trackFace() {
-        if (state.detector && !video.paused) {
+    // 面部检测循环
+    async function detectFaceLoop() {
+        if (detector && !video.paused && !video.ended) {
             try {
-                const faces = await state.detector.estimateFaces(video);
+                const faces = await detector.estimateFaces(video);
                 if (faces.length > 0) {
                     const kp = faces[0].keypoints;
-                    
-                    // 关键点：
-                    // 13: 上唇, 14: 下唇
-                    // 61: 嘴角左, 291: 嘴角右
-                    const up = kp[13]; 
-                    const low = kp[14]; 
-                    const leftCorner = kp[61];
-                    const rightCorner = kp[291];
+                    const up = kp[13]; // 上唇
+                    const low = kp[14]; // 下唇
 
-                    // 1. 映射坐标
-                    const scaleX = canvas.width / video.videoWidth;
-                    const scaleY = canvas.height / video.videoHeight;
-
-                    // 计算嘴巴中心 (视觉位置)
-                    const mouthX = up.x * scaleX;
-                    const mouthY = (up.y + low.y) / 2 * scaleY;
-                    
-                    // 平滑移动
-                    state.mouth.x = state.mouth.x + (mouthX - state.mouth.x) * 0.5;
-                    state.mouth.y = state.mouth.y + (mouthY - state.mouth.y) * 0.5;
-
-                    // 2. 计算张开比例 (比固定像素更靠谱)
-                    // 嘴巴高度
-                    const mouthHeight = Math.abs(low.y - up.y);
-                    // 嘴巴宽度
-                    const mouthWidth = Math.abs(rightCorner.x - leftCorner.x);
-                    
-                    // 张开度比率
-                    const openness = mouthHeight / mouthWidth;
-                    
-                    // 调试显示
-                    if(ui.debug) ui.debug.innerText = `Openness: ${openness.toFixed(2)}`;
-
-                    state.mouth.open = openness > CONFIG.mouthRatioThreshold;
-                    state.mouth.width = mouthWidth * scaleX;
-
-                    updateMouthUI();
-                } else {
-                     if(ui.debug) ui.debug.innerText = "No Face Detected";
+                    if (up && low) {
+                        mouthData.x = up.x; 
+                        mouthData.y = (up.y + low.y) / 2;
+                        const dist = Math.abs(low.y - up.y);
+                        
+                        mouthData.open = dist > CONFIG.mouthThreshold;
+                        
+                        if (mouthData.open) {
+                            mouthDotEl.classList.add('mouth-active');
+                            mouthTextEl.innerText = "张开了";
+                            mouthTextEl.style.color = "#2ed573";
+                        } else {
+                            mouthDotEl.classList.remove('mouth-active');
+                            mouthTextEl.innerText = "请张嘴";
+                            mouthTextEl.style.color = "white";
+                        }
+                    }
                 }
-            } catch (e) {
-                console.error(e);
-            }
+            } catch (e) {}
         }
-        // 使用 requestAnimationFrame 可能会在设备卡顿时堆积，
-        // 但对于检测循环，直接递归调用即可
-        requestAnimationFrame(trackFace);
+        requestAnimationFrame(detectFaceLoop);
     }
 
-    function updateMouthUI() {
-        if (state.mouth.open) {
-            ui.mouthStatus.classList.add('active-state');
-            ui.statusText.innerText = "准备开吃";
-        } else {
-            ui.mouthStatus.classList.remove('active-state');
-            ui.statusText.innerText = "张嘴开吃";
-        }
-    }
-
-    /**
-     * 游戏物品类
-     */
-    class Item {
+    // 游戏物体类
+    class GameItem {
         constructor() {
-            this.type = Math.random() < 0.25 ? 'dark' : 'light'; 
-            this.radius = Math.random() * 15 + 25; 
-            this.x = Math.random() * (canvas.width - 100) + 50; 
+            // 20% 几率是炸弹
+            this.type = Math.random() < 0.2 ? 'bomb' : 'bun';
+            this.x = Math.random() * (CONFIG.width - 60) + 30;
             this.y = -50;
-            this.speed = (Math.random() * 2 + CONFIG.baseSpeed) + (state.score / 20);
-            this.floatOffset = Math.random() * Math.PI * 2;
+            this.size = 40;
+            // 速度调整：CONFIG.baseSpeed + 随分数增加的速度
+            this.speed = Math.random() * 4 + CONFIG.baseSpeed + (score / 10);
+            this.delete = false;
         }
 
         update() {
             this.y += this.speed;
-            this.x += Math.sin(this.y * 0.01 + this.floatOffset) * 0.5;
+            if (this.y > CONFIG.height + 50) this.delete = true;
         }
 
         draw(ctx) {
-            ctx.save();
-            ctx.translate(this.x, this.y);
-            
-            if (this.type === 'light') {
-                // 包子
-                ctx.shadowBlur = 20;
-                ctx.shadowColor = CONFIG.glowColor;
-                ctx.beginPath();
-                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
-                ctx.fillStyle = '#FFFFFF';
+            ctx.beginPath();
+            if (this.type === 'bun') {
+                // 画包子
+                ctx.fillStyle = "#ffffff";
+                ctx.arc(this.x, this.y, this.size/2, 0, Math.PI * 2);
                 ctx.fill();
-
-                ctx.shadowBlur = 0;
-                ctx.strokeStyle = '#E2E2E2'; 
+                ctx.strokeStyle = "#e0e0e0";
                 ctx.lineWidth = 2;
-                ctx.lineCap = 'round';
-                
-                ctx.beginPath();
-                ctx.moveTo(0, -this.radius * 0.6);
-                ctx.quadraticCurveTo(this.radius * 0.1, -this.radius * 0.3, 0, 0);
-                ctx.moveTo(-this.radius * 0.4, -this.radius * 0.4);
-                ctx.quadraticCurveTo(-this.radius * 0.1, -this.radius * 0.2, 0, 0);
-                ctx.moveTo(this.radius * 0.4, -this.radius * 0.4);
-                ctx.quadraticCurveTo(this.radius * 0.1, -this.radius * 0.2, 0, 0);
                 ctx.stroke();
-
+                // 褶皱
                 ctx.beginPath();
-                ctx.arc(0, 0, this.radius + 4, 0, Math.PI * 2);
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-                ctx.lineWidth = 1;
+                ctx.moveTo(this.x - 10, this.y - 10);
+                ctx.lineTo(this.x + 10, this.y + 10);
                 ctx.stroke();
-
             } else {
-                // 炸弹
-                ctx.shadowBlur = 15;
-                ctx.shadowColor = '#FF4757'; 
-                ctx.beginPath();
-                for (let i = 0; i < 8; i++) {
-                    const angle = (i / 8) * Math.PI * 2;
-                    const r = i % 2 === 0 ? this.radius : this.radius * 0.6;
-                    const px = Math.cos(angle) * r;
-                    const py = Math.sin(angle) * r;
-                    if (i===0) ctx.moveTo(px, py);
-                    else ctx.lineTo(px, py);
-                }
-                ctx.closePath();
-                ctx.fillStyle = CONFIG.darkColor;
+                // 画炸弹
+                ctx.fillStyle = "#333333";
+                ctx.arc(this.x, this.y, this.size/2, 0, Math.PI * 2);
                 ctx.fill();
-
+                // 红色中心
+                ctx.fillStyle = "red";
                 ctx.beginPath();
-                ctx.arc(0, 0, this.radius * 0.3, 0, Math.PI * 2);
-                ctx.fillStyle = '#FF4757';
+                ctx.arc(this.x, this.y, 8, 0, Math.PI * 2);
                 ctx.fill();
+                // 叹号
+                ctx.fillStyle = "white";
+                ctx.font = "12px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText("!", this.x, this.y + 4);
             }
-
-            ctx.restore();
         }
     }
 
-    /**
-     * 游戏逻辑
-     */
     function startGame() {
         AudioSys.init();
-        ui.modal.classList.add('hidden');
+        overlayEl.classList.add('hidden');
+        isGameRunning = true;
+        score = 0;
+        items = [];
+        scoreEl.innerText = "得分: 0";
+        timerEl.innerText = "时间: " + CONFIG.gameDuration;
         
-        state.running = true;
-        state.score = 0;
-        state.items = [];
-        state.particles = [];
-        state.time = CONFIG.gameDuration;
+        // 立即生成一个
+        items.push(new GameItem()); 
+        lastSpawnTime = 0;
         
-        ui.score.innerText = "0";
-        ui.time.innerText = state.time;
-        ui.time.classList.remove('danger');
-
-        state.startTime = performance.now();
-        loop(state.startTime);
+        gameStartTime = performance.now();
+        gameLoop(gameStartTime);
     }
 
-    function gameOver(reason) {
-        state.running = false;
-        AudioSys.playDarkness();
+    function gameOver(isTimeUp = false) {
+        isGameRunning = false;
         
-        ui.modalTitle.innerText = reason === 'time' ? "时间到！" : "吃到炸弹！";
-        ui.modalDesc.innerHTML = `吃掉包子: <span style="color:#F5D76E;font-size:24px;font-weight:bold">${state.score}</span> 个<br>下次继续加油！`;
-        ui.btn.innerText = "再来一局";
-        ui.modal.classList.remove('hidden');
+        if (isTimeUp) {
+            AudioSys.playTimeUp();
+            overlayTitle.innerText = "⏰ 时间到！";
+        } else {
+            AudioSys.playExplosion();
+            overlayTitle.innerText = "💥 游戏结束";
+        }
+        
+        overlayDesc.innerText = `最终得分: ${score}`;
+        startBtn.innerText = "再玩一次";
+        overlayEl.classList.remove('hidden');
     }
 
-    function loop(timestamp) {
-        if (!state.running) return;
+    function gameLoop(timestamp) {
+        if (!isGameRunning) return;
 
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.clearRect(0, 0, CONFIG.width, CONFIG.height);
 
-        const elapsed = (timestamp - state.startTime) / 1000;
-        const remaining = Math.ceil(CONFIG.gameDuration - elapsed);
-        if (remaining !== state.time) {
-            state.time = remaining;
-            ui.time.innerText = remaining;
-            if (remaining <= 10) ui.time.classList.add('danger');
-            if (remaining <= 0) {
-                gameOver('time');
-                return;
-            }
-        }
-
-        const spawnRate = Math.max(250, 1200 - state.score * 20);
+        // --- 倒计时逻辑 ---
+        const elapsed = (timestamp - gameStartTime) / 1000;
+        const remaining = Math.max(0, Math.ceil(CONFIG.gameDuration - elapsed));
         
-        if (timestamp - state.lastSpawn > spawnRate) {
-            state.items.push(new Item());
-            if (state.score > 20 && Math.random() < 0.3) {
-                state.items.push(new Item());
-            }
-            state.lastSpawn = timestamp;
+        timerEl.innerText = "时间: " + remaining;
+        
+        if (remaining <= 10) {
+            timerEl.style.color = "#ff4757";
+        } else {
+            timerEl.style.color = "#00ccff";
         }
 
-        // 绘制光环
-        if (state.mouth.x !== 0) {
-            ctx.save();
-            const ringSize = state.mouth.open ? state.mouth.width * 0.8 : state.mouth.width * 0.5;
-            const ringColor = state.mouth.open ? '#FFF' : 'rgba(255,255,255,0.3)';
-            const glowStrength = state.mouth.open ? 30 : 10;
+        if (remaining <= 0) {
+            gameOver(true);
+            return;
+        }
+
+        // --- 生成逻辑 ---
+        let currentSpawnRate = Math.max(
+            CONFIG.minSpawnRate, 
+            CONFIG.initialSpawnRate - (score * 10) // 随分数生成加快
+        );
+
+        if (!lastSpawnTime || timestamp - lastSpawnTime > currentSpawnRate) {
+            items.push(new GameItem());
             
-            ctx.translate(state.mouth.x, state.mouth.y);
-            ctx.shadowBlur = glowStrength;
-            ctx.shadowColor = '#FFF';
-            ctx.beginPath();
-            ctx.arc(0, 0, Math.max(10, ringSize), 0, Math.PI * 2);
-            ctx.lineWidth = state.mouth.open ? 4 : 2;
-            ctx.strokeStyle = ringColor;
-            ctx.stroke();
-
-            if (state.mouth.open) {
-                ctx.fillStyle = 'rgba(255,255,255,0.8)';
-                ctx.fill();
+            // 包子雨逻辑：分数越高，多重生成的几率越大
+            if (score > 10 && Math.random() < 0.4) {
+                items.push(new GameItem()); // 40%概率额外生成一个
             }
-            ctx.restore();
+            if (score > 30 && Math.random() < 0.4) {
+                items.push(new GameItem()); // 高分时有几率一次生成3个
+            }
+
+            lastSpawnTime = timestamp;
         }
 
-        // 更新物品
-        for (let i = state.items.length - 1; i >= 0; i--) {
-            const item = state.items[i];
+        // 绘制嘴巴状态
+        if (mouthData.open) {
+            ctx.strokeStyle = "#2ed573";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(mouthData.x, mouthData.y, 30, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        // 更新物体
+        for (let i = items.length - 1; i >= 0; i--) {
+            let item = items[i];
             item.update();
             item.draw(ctx);
 
-            const mouthRadius = Math.max(20, state.mouth.width * 0.6);
-            const dist = Math.hypot(item.x - state.mouth.x, item.y - state.mouth.y);
+            // 碰撞检测
+            let dist = Math.sqrt((item.x - mouthData.x) ** 2 + (item.y - mouthData.y) ** 2);
             
-            if (dist < (item.radius + mouthRadius) && state.mouth.open) {
-                if (item.type === 'light') {
-                    state.score++;
-                    ui.score.innerText = state.score;
-                    AudioSys.playChime();
-                    for(let k=0; k<CONFIG.particleCount; k++) {
-                        state.particles.push(new Particle(item.x, item.y, CONFIG.glowColor));
-                    }
-                    state.items.splice(i, 1);
+            if (dist < 40 && mouthData.open) {
+                if (item.type === 'bun') {
+                    score++;
+                    scoreEl.innerText = "得分: " + score;
+                    AudioSys.playEat();
+                    item.delete = true;
+                    // 显示 +1
+                    ctx.fillStyle = "yellow";
+                    ctx.font = "bold 24px Arial";
+                    ctx.fillText("+1", mouthData.x, mouthData.y - 40);
                 } else {
-                    gameOver('dead');
-                    return;
+                    gameOver(false);
+                    return; 
                 }
-            } else if (item.y > canvas.height + 50) {
-                state.items.splice(i, 1);
+            }
+
+            if (item.delete) {
+                items.splice(i, 1);
             }
         }
 
-        for (let i = state.particles.length - 1; i >= 0; i--) {
-            const p = state.particles[i];
-            p.update();
-            p.draw(ctx);
-            if (p.life <= 0) state.particles.splice(i, 1);
-        }
-
-        state.loopId = requestAnimationFrame(loop);
+        requestAnimationFrame(gameLoop);
     }
 
-    init();
-
+    main();
 </script>
 </body>
 </html>
