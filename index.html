@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>吃包子大挑战 - 修复版</title>
+    <title>吃包子大挑战 - 循序渐进版</title>
     <style>
         body {
             margin: 0;
@@ -135,6 +135,9 @@
             transition: transform 0.1s;
         }
         button:active { transform: scale(0.95); }
+
+        /* 嘴巴张开时的视觉提示 */
+        .mouth-active { background-color: #2ed573 !important; box-shadow: 0 0 10px #2ed573; }
     </style>
 </head>
 <body>
@@ -170,8 +173,9 @@
         width: 640,
         height: 480,
         mouthThreshold: 10, 
-        baseSpeed: 3,       
-        spawnRate: 1200     
+        baseSpeed: 4.5,        // 基础速度从 2.5 提升到 4.5
+        initialSpawnRate: 2500, // 初始生成间隔: 2.5秒
+        minSpawnRate: 600       // 最快生成间隔: 0.6秒
     };
 
     // 音效
@@ -312,7 +316,8 @@
             this.x = Math.random() * (CONFIG.width - 60) + 30;
             this.y = -50;
             this.size = 40;
-            this.speed = Math.random() * 2 + CONFIG.baseSpeed + (score / 10);
+            // 速度调整：随机波动加大，且随分数增加变快的幅度更大 (score / 10)
+            this.speed = Math.random() * 3 + CONFIG.baseSpeed + (score / 10);
             this.delete = false;
         }
 
@@ -364,6 +369,7 @@
         scoreEl.innerText = "得分: 0";
         // 立即生成一个，防止等待
         items.push(new GameItem()); 
+        lastSpawnTime = 0; // 重置计时器
         gameLoop(0);
     }
 
@@ -381,9 +387,15 @@
 
         ctx.clearRect(0, 0, CONFIG.width, CONFIG.height);
 
+        // 动态计算生成间隔：每得1分，间隔减少50毫秒
+        // 初始 2500ms, 10分时 2000ms, 20分时 1500ms...
+        let currentSpawnRate = Math.max(
+            CONFIG.minSpawnRate, 
+            CONFIG.initialSpawnRate - (score * 50)
+        );
+
         // 生成逻辑
-        // 如果是第一次运行或者达到时间间隔
-        if (!lastSpawnTime || timestamp - lastSpawnTime > CONFIG.spawnRate) {
+        if (!lastSpawnTime || timestamp - lastSpawnTime > currentSpawnRate) {
             items.push(new GameItem());
             lastSpawnTime = timestamp;
         }
