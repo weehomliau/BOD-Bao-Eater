@@ -2,32 +2,27 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>吃包子大挑战 - 极速包子雨版</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>吃包子大挑战 - 智能追踪版</title>
     <style>
         body {
             margin: 0;
             overflow: hidden;
-            background-color: #1a1a1a;
+            background-color: #000;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            width: 100vw;
             height: 100vh;
         }
 
         #game-wrapper {
             position: relative;
-            width: 640px;
-            height: 480px;
-            border-radius: 12px;
+            width: 100%;
+            height: 100%;
             overflow: hidden;
-            box-shadow: 0 0 30px rgba(0,0,0,0.8);
-            border: 4px solid #333;
             background: #000;
         }
 
-        /* 视频层：镜像翻转 */
+        /* 视频层：使用 cover 保持比例填充 */
         video {
             position: absolute;
             top: 0;
@@ -39,7 +34,7 @@
             z-index: 1;
         }
 
-        /* 画布层：镜像翻转 */
+        /* 画布层 */
         canvas {
             position: absolute;
             top: 0;
@@ -148,8 +143,31 @@
         }
         button:active { transform: scale(0.95); }
 
-        /* 嘴巴张开时的视觉提示 */
         .mouth-active { background-color: #2ed573 !important; box-shadow: 0 0 10px #2ed573; }
+        
+        /* 调试信息 */
+        #debug-info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: lime;
+            font-size: 14px;
+            background: rgba(0,0,0,0.5);
+            padding: 5px;
+            pointer-events: none;
+        }
+
+        @media (max-width: 600px) {
+            .hud-top {
+                flex-direction: column;
+                gap: 10px;
+                align-items: flex-start;
+            }
+            #score-board, #timer-board {
+                font-size: 20px;
+                min-width: 60px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -169,32 +187,32 @@
                 <span id="mouth-text">请张大嘴巴</span>
             </div>
         </div>
+        <!-- 调试显示 -->
+        <div id="debug-info">等待面部检测...</div>
     </div>
 
     <!-- 遮罩层 -->
     <div id="overlay-screen">
-        <h1 id="overlay-title">吃包子大作战 (包子雨版)</h1>
-        <p id="overlay-desc">正在初始化...</p>
+        <h1 id="overlay-title">吃包子大作战 (智能追踪版)</h1>
+        <p id="overlay-desc">正在初始化 AI...</p>
         <button id="start-btn" class="hidden">开始游戏</button>
     </div>
 </div>
 
-<!-- 引入库 -->
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection"></script>
 
 <script>
     const CONFIG = {
-        width: 640,
-        height: 480,
-        mouthThreshold: 10, 
-        baseSpeed: 20.0,        // 基础速度 20
-        initialSpawnRate: 800,  // 初始间隔从 2000 降到 800 (更快)
-        minSpawnRate: 150,      // 最小间隔从 400 降到 150 (极速)
-        gameDuration: 90        // 游戏时长 90 秒
+        // 阈值设定：嘴巴张开度 (高度/宽度) 大于此值即判定为张嘴
+        // 0.05 是一个非常灵敏的值，稍微张开一点就能触发
+        mouthRatioThreshold: 0.05, 
+        baseSpeed: 6.0,         // 速度调回 6.0
+        initialSpawnRate: 1200, // 频率稍微调回适中，防止堆积过多
+        minSpawnRate: 250,      // 最快频率
+        gameDuration: 90        
     };
 
-    // 音效
     const AudioSys = {
         ctx: null,
         init: function() {
@@ -252,6 +270,11 @@
     let lastSpawnTime = 0;
     let gameStartTime = 0; 
     let mouthData = { open: false, x: 0, y: 0 };
+    // 用于可视化的关键点
+    let debugPoints = [];
+    
+    let screenW = window.innerWidth;
+    let screenH = window.innerHeight;
 
     const scoreEl = document.getElementById('score-board');
     const timerEl = document.getElementById('timer-board');
@@ -261,21 +284,19 @@
     const overlayTitle = document.getElementById('overlay-title');
     const overlayDesc = document.getElementById('overlay-desc');
     const startBtn = document.getElementById('start-btn');
+    const debugEl = document.getElementById('debug-info');
 
     async function main() {
         video = document.getElementById('video');
         canvas = document.getElementById('output');
         ctx = canvas.getContext('2d');
 
-        canvas.width = CONFIG.width;
-        canvas.height = CONFIG.height;
-        video.width = CONFIG.width;
-        video.height = CONFIG.height;
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
 
-        // 1. 摄像头
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { width: CONFIG.width, height: CONFIG.height },
+                video: { facingMode: 'user' },
                 audio: false
             });
             video.srcObject = stream;
@@ -286,7 +307,6 @@
             return;
         }
 
-        // 2. 加载模型
         try {
             overlayDesc.innerText = "加载 AI 模型中...";
             await tf.ready();
@@ -307,23 +327,84 @@
         }
     }
 
-    // 面部检测循环
+    function resizeCanvas() {
+        screenW = window.innerWidth;
+        screenH = window.innerHeight;
+        canvas.width = screenW;
+        canvas.height = screenH;
+    }
+
     async function detectFaceLoop() {
         if (detector && !video.paused && !video.ended) {
             try {
                 const faces = await detector.estimateFaces(video);
+                
+                // 重置调试点
+                debugPoints = [];
+
                 if (faces.length > 0) {
                     const kp = faces[0].keypoints;
-                    const up = kp[13]; // 上唇
-                    const low = kp[14]; // 下唇
+                    
+                    // 关键点：
+                    // 13: 上唇, 14: 下唇
+                    // 61: 左嘴角, 291: 右嘴角
+                    const up = kp[13];
+                    const low = kp[14];
+                    const left = kp[61];
+                    const right = kp[291];
 
-                    if (up && low) {
-                        mouthData.x = up.x; 
-                        mouthData.y = (up.y + low.y) / 2;
-                        const dist = Math.abs(low.y - up.y);
+                    if (up && low && left && right) {
+                        // 1. 坐标映射 (适配 object-fit: cover)
+                        const videoW = video.videoWidth;
+                        const videoH = video.videoHeight;
+                        const screenRatio = screenW / screenH;
+                        const videoRatio = videoW / videoH;
+
+                        let scale = 1;
+                        let offsetX = 0;
+                        let offsetY = 0;
+
+                        if (screenRatio > videoRatio) {
+                            scale = screenW / videoW;
+                            const renderedHeight = videoH * scale;
+                            offsetY = (renderedHeight - screenH) / 2;
+                        } else {
+                            scale = screenH / videoH;
+                            const renderedWidth = videoW * scale;
+                            offsetX = (renderedWidth - screenW) / 2;
+                        }
+
+                        // 辅助函数：将视频坐标转为屏幕坐标
+                        const toScreen = (pt) => ({
+                            x: (pt.x * scale) - offsetX,
+                            y: (pt.y * scale) - offsetY
+                        });
+
+                        const sUp = toScreen(up);
+                        const sLow = toScreen(low);
+                        const sLeft = toScreen(left);
+                        const sRight = toScreen(right);
+
+                        // 保存调试点以供绘制
+                        debugPoints = [sUp, sLow, sLeft, sRight];
+
+                        mouthData.x = sUp.x; 
+                        mouthData.y = (sUp.y + sLow.y) / 2;
                         
-                        mouthData.open = dist > CONFIG.mouthThreshold;
+                        // 2. 使用【比例】判定，而不是像素距离
+                        const mouthH = Math.hypot(sUp.x - sLow.x, sUp.y - sLow.y); // 嘴高
+                        const mouthW = Math.hypot(sLeft.x - sRight.x, sLeft.y - sRight.y); // 嘴宽
                         
+                        // 防止除以0
+                        const ratio = mouthH / (mouthW + 1);
+                        
+                        // 判定
+                        mouthData.open = ratio > CONFIG.mouthRatioThreshold;
+                        
+                        // 更新调试信息
+                        debugEl.innerText = `检测中: 张开度 ${ratio.toFixed(2)} (阈值: ${CONFIG.mouthRatioThreshold})`;
+                        debugEl.style.color = mouthData.open ? "#2ed573" : "yellow";
+
                         if (mouthData.open) {
                             mouthDotEl.classList.add('mouth-active');
                             mouthTextEl.innerText = "张开了";
@@ -334,34 +415,38 @@
                             mouthTextEl.style.color = "white";
                         }
                     }
+                } else {
+                    debugEl.innerText = "未检测到人脸 - 请调整光线或距离";
+                    debugEl.style.color = "red";
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.error(e);
+            }
         }
         requestAnimationFrame(detectFaceLoop);
     }
 
-    // 游戏物体类
     class GameItem {
         constructor() {
-            // 20% 几率是炸弹
             this.type = Math.random() < 0.2 ? 'bomb' : 'bun';
-            this.x = Math.random() * (CONFIG.width - 60) + 30;
+            
+            // X坐标随机，限制在屏幕内
+            this.x = Math.random() * (screenW - 60) + 30;
             this.y = -50;
             this.size = 40;
-            // 速度调整：CONFIG.baseSpeed + 随分数增加的速度
+            
             this.speed = Math.random() * 4 + CONFIG.baseSpeed + (score / 10);
             this.delete = false;
         }
 
         update() {
             this.y += this.speed;
-            if (this.y > CONFIG.height + 50) this.delete = true;
+            if (this.y > screenH + 50) this.delete = true;
         }
 
         draw(ctx) {
             ctx.beginPath();
             if (this.type === 'bun') {
-                // 画包子
                 ctx.fillStyle = "#ffffff";
                 ctx.arc(this.x, this.y, this.size/2, 0, Math.PI * 2);
                 ctx.fill();
@@ -374,7 +459,6 @@
                 ctx.lineTo(this.x + 10, this.y + 10);
                 ctx.stroke();
             } else {
-                // 画炸弹
                 ctx.fillStyle = "#333333";
                 ctx.arc(this.x, this.y, this.size/2, 0, Math.PI * 2);
                 ctx.fill();
@@ -401,7 +485,6 @@
         scoreEl.innerText = "得分: 0";
         timerEl.innerText = "时间: " + CONFIG.gameDuration;
         
-        // 立即生成一个
         items.push(new GameItem()); 
         lastSpawnTime = 0;
         
@@ -426,11 +509,38 @@
     }
 
     function gameLoop(timestamp) {
-        if (!isGameRunning) return;
+        // 无论游戏是否运行，都绘制调试点，方便找位置
+        if (debugPoints.length > 0) {
+            // 如果游戏没运行，先清空一下画布(避免重叠)，否则游戏循环会清空
+            if (!isGameRunning) ctx.clearRect(0, 0, screenW, screenH);
+            
+            // 绘制红点
+            ctx.fillStyle = "red";
+            for (let p of debugPoints) {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
 
-        ctx.clearRect(0, 0, CONFIG.width, CONFIG.height);
+        if (!isGameRunning) {
+            requestAnimationFrame(gameLoop);
+            return;
+        }
 
-        // --- 倒计时逻辑 ---
+        // 正常游戏循环
+        ctx.clearRect(0, 0, screenW, screenH);
+        
+        // 重绘红点 (在清空后)
+        if (debugPoints.length > 0) {
+            ctx.fillStyle = "red";
+            for (let p of debugPoints) {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
         const elapsed = (timestamp - gameStartTime) / 1000;
         const remaining = Math.max(0, Math.ceil(CONFIG.gameDuration - elapsed));
         
@@ -447,27 +557,25 @@
             return;
         }
 
-        // --- 生成逻辑 ---
         let currentSpawnRate = Math.max(
             CONFIG.minSpawnRate, 
-            CONFIG.initialSpawnRate - (score * 10) // 随分数生成加快
+            CONFIG.initialSpawnRate - (score * 10) 
         );
 
         if (!lastSpawnTime || timestamp - lastSpawnTime > currentSpawnRate) {
             items.push(new GameItem());
             
-            // 包子雨逻辑：分数越高，多重生成的几率越大
             if (score > 10 && Math.random() < 0.4) {
-                items.push(new GameItem()); // 40%概率额外生成一个
+                items.push(new GameItem()); 
             }
             if (score > 30 && Math.random() < 0.4) {
-                items.push(new GameItem()); // 高分时有几率一次生成3个
+                items.push(new GameItem()); 
             }
 
             lastSpawnTime = timestamp;
         }
 
-        // 绘制嘴巴状态
+        // 绘制嘴巴状态圈
         if (mouthData.open) {
             ctx.strokeStyle = "#2ed573";
             ctx.lineWidth = 3;
@@ -482,7 +590,6 @@
             item.update();
             item.draw(ctx);
 
-            // 碰撞检测
             let dist = Math.sqrt((item.x - mouthData.x) ** 2 + (item.y - mouthData.y) ** 2);
             
             if (dist < 40 && mouthData.open) {
