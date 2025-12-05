@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>吃包大胃王 - 面部互动</title>
+    <title>吃包大胃王 - 极速版</title>
     <style>
         :root {
             --glass-bg: rgba(255, 255, 255, 0.15);
@@ -43,7 +43,7 @@
             overflow: hidden;
         }
 
-        /* 视频层：作为背景，稍微调暗一点以突出特效 */
+        /* 视频层：作为背景 */
         video {
             position: absolute;
             top: 0;
@@ -232,6 +232,16 @@
         .hidden .card {
             transform: translateY(20px);
         }
+
+        /* 调试信息样式 (可选，不需要时可删除) */
+        #debug-info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: rgba(255,255,255,0.5);
+            font-size: 10px;
+            z-index: 5;
+        }
     </style>
 </head>
 <body>
@@ -241,6 +251,9 @@
     <canvas id="game-canvas"></canvas>
 
     <div id="ui-layer">
+        <!-- 调试信息: 方便你在手机上看到是否识别到了 -->
+        <div id="debug-info">Openness: 0.00</div>
+
         <div class="hud-header glass-panel">
             <div class="score-box">
                 <span class="score-label">数量</span>
@@ -268,7 +281,7 @@
                 小心混在里面的炸弹。
             </p>
             <button id="action-btn" class="btn hidden">开始挑战</button>
-            <p id="loading-text" style="font-size:14px; margin-top:15px; margin-bottom:0;">正在准备蒸笼...</p>
+            <p id="loading-text" style="font-size:14px; margin-top:15px; margin-bottom:0;">正在加热蒸笼 (AI加载中)...</p>
         </div>
     </div>
 </div>
@@ -282,63 +295,53 @@
      * 游戏配置
      */
     const CONFIG = {
-        mouthThreshold: 10,     // 张嘴判定阈值
-        baseSpeed: 20,          // 基础下落速度
-        glowColor: '#F5D76E',   // 光球颜色
-        darkColor: '#2D3436',   // 炸弹颜色
-        particleCount: 15,      // 吃到光球时的粒子数量
-        gameDuration: 90        // 秒
+        // 重要修改：不再使用 10px 阈值，改用 0.08 的比例阈值
+        // 0.08 意味着嘴巴张开的高度至少是宽度的 8%
+        mouthRatioThreshold: 0.1, 
+        baseSpeed: 20,          
+        glowColor: '#F5D76E',   
+        darkColor: '#2D3436',   
+        particleCount: 15,      
+        gameDuration: 90        
     };
 
     /**
-     * 音效系统 - 模拟《光遇》风格的空灵音效
+     * 音效系统
      */
     const AudioSys = {
         ctx: null,
-        notes: [523.25, 587.33, 659.25, 783.99, 880.00, 1046.50], // 五声音阶 (C major pentatonic)
+        notes: [523.25, 587.33, 659.25, 783.99, 880.00, 1046.50],
         
         init() {
             window.AudioContext = window.AudioContext || window.webkitAudioContext;
             this.ctx = new AudioContext();
         },
 
-        // 播放类似风铃/竖琴的声音
         playChime() {
             if (!this.ctx) return;
             const osc = this.ctx.createOscillator();
             const gain = this.ctx.createGain();
-            
-            // 随机选择一个音符
             const note = this.notes[Math.floor(Math.random() * this.notes.length)];
-            
-            osc.type = 'sine'; // 正弦波最纯净
+            osc.type = 'sine';
             osc.frequency.setValueAtTime(note, this.ctx.currentTime);
-            
-            // 声音包络：快速起音，长长地衰减
             gain.gain.setValueAtTime(0, this.ctx.currentTime);
             gain.gain.linearRampToValueAtTime(0.3, this.ctx.currentTime + 0.05);
-            gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 1.5); // 1.5秒的余音
-
+            gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 1.5);
             osc.connect(gain);
             gain.connect(this.ctx.destination);
-            
             osc.start();
             osc.stop(this.ctx.currentTime + 1.5);
         },
 
-        // 播放低沉的嗡鸣
         playDarkness() {
             if (!this.ctx) return;
             const osc = this.ctx.createOscillator();
             const gain = this.ctx.createGain();
-            
             osc.type = 'triangle';
             osc.frequency.setValueAtTime(100, this.ctx.currentTime);
             osc.frequency.exponentialRampToValueAtTime(50, this.ctx.currentTime + 0.5);
-            
             gain.gain.setValueAtTime(0.5, this.ctx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
-
             osc.connect(gain);
             gain.connect(this.ctx.destination);
             osc.start();
@@ -347,7 +350,7 @@
     };
 
     /**
-     * 粒子类 - 用于产生吃到东西时的特效
+     * 粒子类
      */
     class Particle {
         constructor(x, y, color) {
@@ -367,7 +370,7 @@
             this.x += this.vx;
             this.y += this.vy;
             this.life -= this.decay;
-            this.size *= 0.95; // 慢慢变小
+            this.size *= 0.95; 
         }
 
         draw(ctx) {
@@ -399,7 +402,6 @@
         startTime: 0
     };
 
-    // DOM 元素
     const video = document.getElementById('video');
     const canvas = document.getElementById('game-canvas');
     const ctx = canvas.getContext('2d');
@@ -412,14 +414,14 @@
         modalTitle: document.getElementById('modal-title'),
         modalDesc: document.getElementById('modal-desc'),
         btn: document.getElementById('action-btn'),
-        loading: document.getElementById('loading-text')
+        loading: document.getElementById('loading-text'),
+        debug: document.getElementById('debug-info')
     };
 
     /**
      * 初始化
      */
     async function init() {
-        // 自适应 Canvas 大小
         function resize() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
@@ -427,42 +429,56 @@
         window.addEventListener('resize', resize);
         resize();
 
-        // 1. 设置摄像头
         try {
+            // 性能优化：限制分辨率为 480x360，减少计算量，适合移动端和Web
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'user', width: 640, height: 480 },
+                video: { 
+                    facingMode: 'user', 
+                    width: { ideal: 480 }, 
+                    height: { ideal: 360 } 
+                },
                 audio: false
             });
             video.srcObject = stream;
-            await new Promise(r => video.onloadedmetadata = r);
-            video.play();
+            // 必须等待视频加载完成
+            await new Promise(r => video.onloadedmetadata = () => {
+                video.play();
+                r();
+            });
         } catch (e) {
             ui.loading.innerText = "无法访问摄像头，请检查权限。";
             return;
         }
 
-        // 2. 加载 AI 模型
         try {
             await tf.ready();
+            // 加载模型
             state.detector = await faceLandmarksDetection.createDetector(
                 faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
-                { runtime: 'tfjs', maxFaces: 1 }
+                { 
+                    runtime: 'tfjs', 
+                    maxFaces: 1,
+                    refineLandmarks: false // 关闭精细点以提高速度
+                }
             );
             
+            // 预热：先跑一次检测，确保真正准备好了再显示按钮
+            ui.loading.innerText = "正在校准面部...";
+            await state.detector.estimateFaces(video);
+
             ui.loading.style.display = 'none';
             ui.btn.classList.remove('hidden');
             ui.btn.addEventListener('click', startGame);
 
-            // 启动追踪
             trackFace();
         } catch (e) {
-            ui.loading.innerText = "模型加载失败，请刷新重试。";
+            ui.loading.innerText = "模型加载慢/失败，请刷新重试。";
             console.error(e);
         }
     }
 
     /**
-     * 面部追踪循环
+     * 面部追踪循环 (独立于游戏循环)
      */
     async function trackFace() {
         if (state.detector && !video.paused) {
@@ -470,35 +486,52 @@
                 const faces = await state.detector.estimateFaces(video);
                 if (faces.length > 0) {
                     const kp = faces[0].keypoints;
-                    const up = kp[13]; // 上唇
-                    const low = kp[14]; // 下唇
-                    const leftMouth = kp[61];
-                    const rightMouth = kp[291];
+                    
+                    // 关键点：
+                    // 13: 上唇, 14: 下唇
+                    // 61: 嘴角左, 291: 嘴角右
+                    const up = kp[13]; 
+                    const low = kp[14]; 
+                    const leftCorner = kp[61];
+                    const rightCorner = kp[291];
 
-                    // 映射坐标到全屏 Canvas
-                    // 注意：Video 是镜像的，但数据不是，我们需要处理 X 轴
+                    // 1. 映射坐标
                     const scaleX = canvas.width / video.videoWidth;
                     const scaleY = canvas.height / video.videoHeight;
 
-                    // 计算嘴巴中心
+                    // 计算嘴巴中心 (视觉位置)
                     const mouthX = up.x * scaleX;
                     const mouthY = (up.y + low.y) / 2 * scaleY;
                     
-                    // 平滑移动 (Lerp) 以减少抖动
+                    // 平滑移动
                     state.mouth.x = state.mouth.x + (mouthX - state.mouth.x) * 0.5;
                     state.mouth.y = state.mouth.y + (mouthY - state.mouth.y) * 0.5;
 
-                    // 计算张开度
-                    const height = Math.abs(low.y - up.y);
-                    state.mouth.open = height > CONFIG.mouthThreshold;
+                    // 2. 计算张开比例 (比固定像素更靠谱)
+                    // 嘴巴高度
+                    const mouthHeight = Math.abs(low.y - up.y);
+                    // 嘴巴宽度
+                    const mouthWidth = Math.abs(rightCorner.x - leftCorner.x);
+                    
+                    // 张开度比率
+                    const openness = mouthHeight / mouthWidth;
+                    
+                    // 调试显示
+                    if(ui.debug) ui.debug.innerText = `Openness: ${openness.toFixed(2)}`;
 
-                    // 计算嘴巴宽度用于碰撞体积
-                    state.mouth.width = Math.abs(rightMouth.x - leftMouth.x) * scaleX;
+                    state.mouth.open = openness > CONFIG.mouthRatioThreshold;
+                    state.mouth.width = mouthWidth * scaleX;
 
                     updateMouthUI();
+                } else {
+                     if(ui.debug) ui.debug.innerText = "No Face Detected";
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.error(e);
+            }
         }
+        // 使用 requestAnimationFrame 可能会在设备卡顿时堆积，
+        // 但对于检测循环，直接递归调用即可
         requestAnimationFrame(trackFace);
     }
 
@@ -517,21 +550,16 @@
      */
     class Item {
         constructor() {
-            this.type = Math.random() < 0.25 ? 'dark' : 'light'; // 25% 几率是炸弹
-            this.radius = Math.random() * 15 + 25; // 大小随机
-            // X轴随机位置，留出边缘缓冲
+            this.type = Math.random() < 0.25 ? 'dark' : 'light'; 
+            this.radius = Math.random() * 15 + 25; 
             this.x = Math.random() * (canvas.width - 100) + 50; 
             this.y = -50;
-            // 速度随分数提升
             this.speed = (Math.random() * 2 + CONFIG.baseSpeed) + (state.score / 20);
-            
-            // 漂浮效果偏移
             this.floatOffset = Math.random() * Math.PI * 2;
         }
 
         update() {
             this.y += this.speed;
-            // 添加一点左右摆动
             this.x += Math.sin(this.y * 0.01 + this.floatOffset) * 0.5;
         }
 
@@ -540,40 +568,28 @@
             ctx.translate(this.x, this.y);
             
             if (this.type === 'light') {
-                // 绘制光之包子 (Spirit Bun)
-                
-                // 1. 圣洁的光晕
+                // 包子
                 ctx.shadowBlur = 20;
                 ctx.shadowColor = CONFIG.glowColor;
-                
-                // 2. 包子本体 (纯白发光)
                 ctx.beginPath();
                 ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
                 ctx.fillStyle = '#FFFFFF';
                 ctx.fill();
 
-                // 3. 包子褶皱 (细节)
-                // 暂时关闭阴影以绘制清晰的线条
                 ctx.shadowBlur = 0;
-                ctx.strokeStyle = '#E2E2E2'; // 淡淡的灰色褶皱
+                ctx.strokeStyle = '#E2E2E2'; 
                 ctx.lineWidth = 2;
                 ctx.lineCap = 'round';
                 
                 ctx.beginPath();
-                // 中间的褶子
                 ctx.moveTo(0, -this.radius * 0.6);
                 ctx.quadraticCurveTo(this.radius * 0.1, -this.radius * 0.3, 0, 0);
-                
-                // 左边的褶子
                 ctx.moveTo(-this.radius * 0.4, -this.radius * 0.4);
                 ctx.quadraticCurveTo(-this.radius * 0.1, -this.radius * 0.2, 0, 0);
-                
-                // 右边的褶子
                 ctx.moveTo(this.radius * 0.4, -this.radius * 0.4);
                 ctx.quadraticCurveTo(this.radius * 0.1, -this.radius * 0.2, 0, 0);
                 ctx.stroke();
 
-                // 4. 外部柔光环 (装饰)
                 ctx.beginPath();
                 ctx.arc(0, 0, this.radius + 4, 0, Math.PI * 2);
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
@@ -581,13 +597,10 @@
                 ctx.stroke();
 
             } else {
-                // 绘制暗黑物质 (Darkness)
+                // 炸弹
                 ctx.shadowBlur = 15;
-                ctx.shadowColor = '#FF4757'; // 危险的红色光晕
-                
-                // 核心本体
+                ctx.shadowColor = '#FF4757'; 
                 ctx.beginPath();
-                // 绘制一个带刺的形状
                 for (let i = 0; i < 8; i++) {
                     const angle = (i / 8) * Math.PI * 2;
                     const r = i % 2 === 0 ? this.radius : this.radius * 0.6;
@@ -600,7 +613,6 @@
                 ctx.fillStyle = CONFIG.darkColor;
                 ctx.fill();
 
-                // 红眼
                 ctx.beginPath();
                 ctx.arc(0, 0, this.radius * 0.3, 0, Math.PI * 2);
                 ctx.fillStyle = '#FF4757';
@@ -645,10 +657,8 @@
     function loop(timestamp) {
         if (!state.running) return;
 
-        // 1. 清理画布
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // 2. 时间逻辑
         const elapsed = (timestamp - state.startTime) / 1000;
         const remaining = Math.ceil(CONFIG.gameDuration - elapsed);
         if (remaining !== state.time) {
@@ -661,24 +671,17 @@
             }
         }
 
-        // 3. 生成物品
-        // 调整生成逻辑：让包子数量随着游戏进程显著增长
-        // 初始间隔 1200ms (较快)，随分数增加每分减少 20ms，最低间隔 250ms (极快)
         const spawnRate = Math.max(250, 1200 - state.score * 20);
         
         if (timestamp - state.lastSpawn > spawnRate) {
             state.items.push(new Item());
-            
-            // "大胃王"模式：分数高时，一次掉落多个
             if (state.score > 20 && Math.random() < 0.3) {
                 state.items.push(new Item());
             }
-            
             state.lastSpawn = timestamp;
         }
 
-        // 4. 绘制玩家光环 (Avatar)
-        // 模仿光遇中的“呼唤”光圈
+        // 绘制光环
         if (state.mouth.x !== 0) {
             ctx.save();
             const ringSize = state.mouth.open ? state.mouth.width * 0.8 : state.mouth.width * 0.5;
@@ -686,54 +689,40 @@
             const glowStrength = state.mouth.open ? 30 : 10;
             
             ctx.translate(state.mouth.x, state.mouth.y);
-            
-            // 外发光
             ctx.shadowBlur = glowStrength;
             ctx.shadowColor = '#FFF';
-            
-            // 光环
             ctx.beginPath();
             ctx.arc(0, 0, Math.max(10, ringSize), 0, Math.PI * 2);
             ctx.lineWidth = state.mouth.open ? 4 : 2;
             ctx.strokeStyle = ringColor;
             ctx.stroke();
 
-            // 如果张嘴，内部有个核心
             if (state.mouth.open) {
                 ctx.fillStyle = 'rgba(255,255,255,0.8)';
                 ctx.fill();
             }
-
             ctx.restore();
         }
 
-        // 5. 更新和绘制物品
+        // 更新物品
         for (let i = state.items.length - 1; i >= 0; i--) {
             const item = state.items[i];
             item.update();
             item.draw(ctx);
 
-            // 碰撞检测 (体积碰撞：圆形距离)
-            // 判定区域为嘴巴中心，半径为嘴宽的一半
             const mouthRadius = Math.max(20, state.mouth.width * 0.6);
             const dist = Math.hypot(item.x - state.mouth.x, item.y - state.mouth.y);
             
-            // 触发条件：距离足够近 + 嘴巴张开
             if (dist < (item.radius + mouthRadius) && state.mouth.open) {
                 if (item.type === 'light') {
-                    // 吃到光球
                     state.score++;
                     ui.score.innerText = state.score;
                     AudioSys.playChime();
-                    
-                    // 爆粒子特效
                     for(let k=0; k<CONFIG.particleCount; k++) {
                         state.particles.push(new Particle(item.x, item.y, CONFIG.glowColor));
                     }
-                    
                     state.items.splice(i, 1);
                 } else {
-                    // 吃到炸弹
                     gameOver('dead');
                     return;
                 }
@@ -742,7 +731,6 @@
             }
         }
 
-        // 6. 更新和绘制粒子
         for (let i = state.particles.length - 1; i >= 0; i--) {
             const p = state.particles[i];
             p.update();
@@ -753,7 +741,6 @@
         state.loopId = requestAnimationFrame(loop);
     }
 
-    // 启动
     init();
 
 </script>
