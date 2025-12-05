@@ -283,7 +283,7 @@
      */
     const CONFIG = {
         mouthThreshold: 10,     // 张嘴判定阈值
-        baseSpeed: 6.5,         // 基础下落速度
+        baseSpeed: 20,          // 基础下落速度
         glowColor: '#F5D76E',   // 光球颜色
         darkColor: '#2D3436',   // 炸弹颜色
         particleCount: 15,      // 吃到光球时的粒子数量
@@ -662,12 +662,18 @@
         }
 
         // 3. 生成物品
-        // 修改生成逻辑：降低生成频率（增加间隔时间）
-        // 初始间隔 3000ms (3秒)，随分数增加每分减少 30ms，最低间隔 800ms
-        const spawnRate = Math.max(800, 3000 - state.score * 30);
+        // 调整生成逻辑：让包子数量随着游戏进程显著增长
+        // 初始间隔 1200ms (较快)，随分数增加每分减少 20ms，最低间隔 250ms (极快)
+        const spawnRate = Math.max(250, 1200 - state.score * 20);
         
         if (timestamp - state.lastSpawn > spawnRate) {
             state.items.push(new Item());
+            
+            // "大胃王"模式：分数高时，一次掉落多个
+            if (state.score > 20 && Math.random() < 0.3) {
+                state.items.push(new Item());
+            }
+            
             state.lastSpawn = timestamp;
         }
 
