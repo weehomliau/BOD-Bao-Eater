@@ -1,622 +1,324 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>吃包子大挑战 - 智能追踪版</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baozi Planet 3D</title>
     <style>
-        body {
-            margin: 0;
-            overflow: hidden;
-            background-color: #000;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            width: 100vw;
-            height: 100vh;
-        }
-
-        #game-wrapper {
-            position: relative;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background: #000;
-        }
-
-        /* 视频层：使用 cover 保持比例填充 */
-        video {
+        body { margin: 0; overflow: hidden; background-color: #111; font-family: 'Courier New', Courier, monospace; }
+        #score-board {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            transform: scaleX(-1);
-            object-fit: cover;
-            z-index: 1;
-        }
-
-        /* 画布层 */
-        canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            transform: scaleX(-1);
-            z-index: 2;
-        }
-
-        /* UI层 */
-        #ui-layer {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
             z-index: 10;
-            pointer-events: none;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
+            text-shadow: 2px 2px #000;
         }
-
-        .hud-top {
-            display: flex;
-            justify-content: space-between;
-            padding: 20px;
-            align-items: center;
-        }
-
-        .hud-group {
-            display: flex;
-            gap: 15px;
-        }
-
-        #score-board, #timer-board {
-            color: #ffcc00;
-            font-size: 28px;
-            font-weight: 900;
-            text-shadow: 3px 3px 0 #000;
-            background: rgba(0,0,0,0.6);
-            padding: 8px 15px;
-            border-radius: 20px;
-            min-width: 100px;
-            text-align: center;
-        }
-        
-        #timer-board {
-            color: #00ccff;
-        }
-
-        #status-indicator {
-            color: white;
-            font-size: 20px;
-            font-weight: bold;
-            background: rgba(0,0,0,0.6);
-            padding: 8px 15px;
-            border-radius: 20px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .status-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background-color: red;
-            transition: background-color 0.2s;
-        }
-
-        #overlay-screen {
+        #controls {
             position: absolute;
-            top: 0;
-            left: 0;
+            bottom: 20px;
             width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.85);
-            color: white;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 20;
-            pointer-events: auto;
             text-align: center;
-        }
-
-        .hidden { display: none !important; }
-
-        button {
-            background: #ff4757;
-            border: none;
-            color: white;
-            padding: 15px 32px;
-            text-align: center;
-            text-decoration: none;
-            display: inline-block;
-            font-size: 20px;
-            margin: 10px 2px;
-            cursor: pointer;
-            border-radius: 50px;
-            font-weight: bold;
-            transition: transform 0.1s;
-        }
-        button:active { transform: scale(0.95); }
-
-        .mouth-active { background-color: #2ed573 !important; box-shadow: 0 0 10px #2ed573; }
-        
-        /* 调试信息 */
-        #debug-info {
-            position: absolute;
-            bottom: 10px;
-            left: 10px;
-            color: lime;
-            font-size: 14px;
-            background: rgba(0,0,0,0.5);
-            padding: 5px;
+            color: rgba(255, 255, 255, 0.7);
             pointer-events: none;
-        }
-
-        @media (max-width: 600px) {
-            .hud-top {
-                flex-direction: column;
-                gap: 10px;
-                align-items: flex-start;
-            }
-            #score-board, #timer-board {
-                font-size: 20px;
-                min-width: 60px;
-            }
         }
     </style>
 </head>
 <body>
+    <div id="score-board">Baozi Eaten: 0</div>
+    <div id="controls">Use Arrow Keys or WASD to Move</div>
 
-<div id="game-wrapper">
-    <video id="video" playsinline></video>
-    <canvas id="output"></canvas>
-    
-    <div id="ui-layer">
-        <div class="hud-top">
-            <div class="hud-group">
-                <div id="score-board">得分: 0</div>
-                <div id="timer-board">时间: 90</div>
-            </div>
-            <div id="status-indicator">
-                <div id="mouth-dot" class="status-dot"></div>
-                <span id="mouth-text">请张大嘴巴</span>
-            </div>
-        </div>
-        <!-- 调试显示 -->
-        <div id="debug-info">等待面部检测...</div>
-    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
-    <!-- 遮罩层 -->
-    <div id="overlay-screen">
-        <h1 id="overlay-title">吃包子大作战 (智能追踪版)</h1>
-        <p id="overlay-desc">正在初始化 AI...</p>
-        <button id="start-btn" class="hidden">开始游戏</button>
-    </div>
-</div>
+    <script>
+        // --- 1. SETUP ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x202030);
+        scene.fog = new THREE.Fog(0x202030, 20, 60);
 
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection"></script>
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
 
-<script>
-    const CONFIG = {
-        // 阈值设定：嘴巴张开度 (高度/宽度) 大于此值即判定为张嘴
-        // 0.05 是一个非常灵敏的值，稍微张开一点就能触发
-        mouthRatioThreshold: 0.05, 
-        baseSpeed: 6.0,         // 速度调回 6.0
-        initialSpawnRate: 1200, // 频率稍微调回适中，防止堆积过多
-        minSpawnRate: 250,      // 最快频率
-        gameDuration: 90        
-    };
+        // --- 2. THE TINY PLANET ---
+        const planetRadius = 15;
+        const planetGeometry = new THREE.SphereGeometry(planetRadius, 64, 64);
+        const planetMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x445566, 
+            roughness: 0.8,
+            flatShading: true
+        });
+        const planet = new THREE.Mesh(planetGeometry, planetMaterial);
+        planet.receiveShadow = true;
+        scene.add(planet);
 
-    const AudioSys = {
-        ctx: null,
-        init: function() {
-            window.AudioContext = window.AudioContext || window.webkitAudioContext;
-            this.ctx = new AudioContext();
-        },
-        playEat: function() {
-            if (!this.ctx) return;
-            const osc = this.ctx.createOscillator();
-            const gain = this.ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(600, this.ctx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 0.1);
-            gain.gain.setValueAtTime(0.5, this.ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
-            osc.connect(gain);
-            gain.connect(this.ctx.destination);
-            osc.start();
-            osc.stop(this.ctx.currentTime + 0.15);
-        },
-        playExplosion: function() {
-            if (!this.ctx) return;
-            const osc = this.ctx.createOscillator();
-            const gain = this.ctx.createGain();
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(100, this.ctx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(10, this.ctx.currentTime + 0.5);
-            gain.gain.setValueAtTime(1, this.ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
-            osc.connect(gain);
-            gain.connect(this.ctx.destination);
-            osc.start();
-            osc.stop(this.ctx.currentTime + 0.5);
-        },
-        playTimeUp: function() {
-            if (!this.ctx) return;
-            const osc = this.ctx.createOscillator();
-            const gain = this.ctx.createGain();
-            osc.type = 'square';
-            osc.frequency.setValueAtTime(400, this.ctx.currentTime);
-            osc.frequency.linearRampToValueAtTime(300, this.ctx.currentTime + 0.3);
-            gain.gain.setValueAtTime(0.5, this.ctx.currentTime);
-            gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.3);
-            osc.connect(gain);
-            gain.connect(this.ctx.destination);
-            osc.start();
-            osc.stop(this.ctx.currentTime + 0.3);
-        }
-    };
+        // Grid helper for "Tron/Cyber" vibe
+        const wireframe = new THREE.WireframeGeometry(planetGeometry);
+        const line = new THREE.LineSegments(wireframe);
+        line.material.depthTest = false;
+        line.material.opacity = 0.15;
+        line.material.transparent = true;
+        line.material.color = new THREE.Color(0x00ffff);
+        scene.add(line);
 
-    let detector, video, ctx, canvas;
-    let isGameRunning = false;
-    let score = 0;
-    let items = []; 
-    let lastSpawnTime = 0;
-    let gameStartTime = 0; 
-    let mouthData = { open: false, x: 0, y: 0 };
-    // 用于可视化的关键点
-    let debugPoints = [];
-    
-    let screenW = window.innerWidth;
-    let screenH = window.innerHeight;
+        // --- 3. THE PLAYER (BAOZI) ---
+        const playerGroup = new THREE.Group();
+        scene.add(playerGroup);
 
-    const scoreEl = document.getElementById('score-board');
-    const timerEl = document.getElementById('timer-board');
-    const mouthDotEl = document.getElementById('mouth-dot');
-    const mouthTextEl = document.getElementById('mouth-text');
-    const overlayEl = document.getElementById('overlay-screen');
-    const overlayTitle = document.getElementById('overlay-title');
-    const overlayDesc = document.getElementById('overlay-desc');
-    const startBtn = document.getElementById('start-btn');
-    const debugEl = document.getElementById('debug-info');
+        // Bun Body
+        const bunGeo = new THREE.SphereGeometry(0.8, 32, 32);
+        // Flatten bottom slightly
+        bunGeo.applyMatrix4(new THREE.Matrix4().makeScale(1, 0.75, 1)); 
+        const bunMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+        const bun = new THREE.Mesh(bunGeo, bunMat);
+        bun.position.y = 0.4;
+        bun.castShadow = true;
+        playerGroup.add(bun);
 
-    async function main() {
-        video = document.getElementById('video');
-        canvas = document.getElementById('output');
-        ctx = canvas.getContext('2d');
+        // The Red Dot (Char Siu Bao style)
+        const dotGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.1, 16);
+        const dotMat = new THREE.MeshStandardMaterial({ color: 0xff3333 });
+        const dot = new THREE.Mesh(dotGeo, dotMat);
+        dot.position.y = 1.05; // Sit on top
+        playerGroup.add(dot);
 
-        resizeCanvas();
-        window.addEventListener('resize', resizeCanvas);
+        // Initial Position (Top of planet)
+        playerGroup.position.set(0, planetRadius, 0);
 
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'user' },
-                audio: false
-            });
-            video.srcObject = stream;
-            await new Promise(resolve => video.onloadedmetadata = resolve);
-            video.play();
-        } catch (e) {
-            overlayDesc.innerHTML = "无法打开摄像头，请确保允许权限。";
-            return;
-        }
+        // --- 4. COLLECTIBLES (DOTS) ---
+        const dots = [];
+        const dotCount = 40;
+        const dotGeoGlobal = new THREE.SphereGeometry(0.3, 8, 8);
+        const dotMatGlobal = new THREE.MeshStandardMaterial({ color: 0xffd700, emissive: 0xaa6600 });
 
-        try {
-            overlayDesc.innerText = "加载 AI 模型中...";
-            await tf.ready();
-            
-            detector = await faceLandmarksDetection.createDetector(
-                faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
-                { runtime: 'tfjs', maxFaces: 1 }
-            );
-            
-            overlayDesc.innerText = "准备就绪！";
-            startBtn.classList.remove('hidden');
-            startBtn.addEventListener('click', startGame);
-            
-            detectFaceLoop();
-        } catch (e) {
-            overlayDesc.innerText = "模型加载失败，请刷新重试。";
-            console.error(e);
-        }
-    }
-
-    function resizeCanvas() {
-        screenW = window.innerWidth;
-        screenH = window.innerHeight;
-        canvas.width = screenW;
-        canvas.height = screenH;
-    }
-
-    async function detectFaceLoop() {
-        if (detector && !video.paused && !video.ended) {
-            try {
-                const faces = await detector.estimateFaces(video);
+        function createDots() {
+            for(let i=0; i<dotCount; i++) {
+                const mesh = new THREE.Mesh(dotGeoGlobal, dotMatGlobal);
                 
-                // 重置调试点
-                debugPoints = [];
+                // Random point on sphere surface
+                const phi = Math.acos( -1 + ( 2 * i ) / dotCount );
+                const theta = Math.sqrt( dotCount * Math.PI ) * phi;
 
-                if (faces.length > 0) {
-                    const kp = faces[0].keypoints;
-                    
-                    // 关键点：
-                    // 13: 上唇, 14: 下唇
-                    // 61: 左嘴角, 291: 右嘴角
-                    const up = kp[13];
-                    const low = kp[14];
-                    const left = kp[61];
-                    const right = kp[291];
+                mesh.position.setFromSphericalCoords(planetRadius + 0.5, phi, theta);
+                
+                // Align to planet center
+                mesh.lookAt(0,0,0);
+                
+                scene.add(mesh);
+                dots.push({ mesh: mesh, active: true });
+            }
+        }
+        createDots();
 
-                    if (up && low && left && right) {
-                        // 1. 坐标映射 (适配 object-fit: cover)
-                        const videoW = video.videoWidth;
-                        const videoH = video.videoHeight;
-                        const screenRatio = screenW / screenH;
-                        const videoRatio = videoW / videoH;
+        // --- 5. GHOSTS (The "Steamers") ---
+        const ghosts = [];
+        const ghostCount = 3;
+        
+        function createGhosts() {
+            const ghostGeo = new THREE.CapsuleGeometry(0.6, 1, 4, 8);
+            const ghostMat = new THREE.MeshStandardMaterial({ color: 0xff00ff, transparent: true, opacity: 0.9 });
+            
+            for(let i=0; i<ghostCount; i++) {
+                const g = new THREE.Group();
+                const mesh = new THREE.Mesh(ghostGeo, ghostMat);
+                mesh.position.y = 0.8;
+                mesh.castShadow = true;
+                g.add(mesh);
+                
+                // Spawn randomly
+                const v = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize().multiplyScalar(planetRadius);
+                g.position.copy(v);
+                
+                scene.add(g);
+                ghosts.push({ group: g, speed: 0.03 + (Math.random() * 0.02) });
+            }
+        }
+        createGhosts();
 
-                        let scale = 1;
-                        let offsetX = 0;
-                        let offsetY = 0;
+        // --- 6. LIGHTING ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        scene.add(ambientLight);
 
-                        if (screenRatio > videoRatio) {
-                            scale = screenW / videoW;
-                            const renderedHeight = videoH * scale;
-                            offsetY = (renderedHeight - screenH) / 2;
-                        } else {
-                            scale = screenH / videoH;
-                            const renderedWidth = videoW * scale;
-                            offsetX = (renderedWidth - screenW) / 2;
-                        }
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(50, 100, 50);
+        dirLight.castShadow = true;
+        dirLight.shadow.camera.top = 20;
+        dirLight.shadow.camera.bottom = -20;
+        dirLight.shadow.camera.left = -20;
+        dirLight.shadow.camera.right = 20;
+        scene.add(dirLight);
 
-                        // 辅助函数：将视频坐标转为屏幕坐标
-                        const toScreen = (pt) => ({
-                            x: (pt.x * scale) - offsetX,
-                            y: (pt.y * scale) - offsetY
-                        });
+        // --- 7. GAME LOGIC & PHYSICS ---
+        let score = 0;
+        const scoreEl = document.getElementById('score-board');
+        const keys = { w:false, a:false, s:false, d:false };
 
-                        const sUp = toScreen(up);
-                        const sLow = toScreen(low);
-                        const sLeft = toScreen(left);
-                        const sRight = toScreen(right);
+        window.addEventListener('keydown', (e) => {
+            const k = e.key.toLowerCase();
+            if(keys.hasOwnProperty(k) || k.startsWith('arrow')) {
+                if(k === 'w' || k === 'arrowup') keys.w = true;
+                if(k === 's' || k === 'arrowdown') keys.s = true;
+                if(k === 'a' || k === 'arrowleft') keys.a = true;
+                if(k === 'd' || k === 'arrowright') keys.d = true;
+            }
+        });
 
-                        // 保存调试点以供绘制
-                        debugPoints = [sUp, sLow, sLeft, sRight];
+        window.addEventListener('keyup', (e) => {
+            const k = e.key.toLowerCase();
+            if(keys.hasOwnProperty(k) || k.startsWith('arrow')) {
+                if(k === 'w' || k === 'arrowup') keys.w = false;
+                if(k === 's' || k === 'arrowdown') keys.s = false;
+                if(k === 'a' || k === 'arrowleft') keys.a = false;
+                if(k === 'd' || k === 'arrowright') keys.d = false;
+            }
+        });
 
-                        mouthData.x = sUp.x; 
-                        mouthData.y = (sUp.y + sLow.y) / 2;
+        // Helper: Align object to sphere surface
+        function alignToSurface(obj, radius) {
+            // 1. Get current position direction from center
+            const up = obj.position.clone().normalize();
+            
+            // 2. Set position exactly on radius (prevents drifting off into space)
+            obj.position.copy(up.multiplyScalar(radius));
+            
+            // 3. Rotate object so its Y-axis matches the "Up" vector (normal)
+            const quaternion = new THREE.Quaternion();
+            quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), up);
+            obj.quaternion.copy(quaternion);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // --- PLAYER MOVEMENT ---
+            const speed = 0.15;
+            const moveDir = new THREE.Vector3(0, 0, 0);
+
+            // Calculate local movement direction based on camera vs player
+            if (keys.w) moveDir.z -= 1;
+            if (keys.s) moveDir.z += 1;
+            if (keys.a) moveDir.x -= 1;
+            if (keys.d) moveDir.x += 1;
+
+            if (moveDir.length() > 0) {
+                moveDir.normalize().multiplyScalar(speed);
+                
+                // We need to move the player tangentially to the sphere.
+                // Current player Up vector
+                const up = playerGroup.position.clone().normalize();
+                
+                // Simple approach: Move in 3D space, then snap back to sphere
+                // Get Camera's basis to determine "Forward" relative to view
+                const camForward = new THREE.Vector3(); 
+                camera.getWorldDirection(camForward);
+                
+                // Project camera forward onto the plane defined by player's Up vector
+                // formula: v_proj = v - (v . n) * n
+                camForward.sub(up.clone().multiplyScalar(camForward.dot(up))).normalize();
+                
+                const camRight = new THREE.Vector3().crossVectors(camForward, up).normalize(); // Note: Cross order matters
+                
+                // Calculate actual move vector in world space
+                const globalMove = new THREE.Vector3()
+                    .addScaledVector(camForward, -moveDir.z)
+                    .addScaledVector(camRight, moveDir.x);
+
+                playerGroup.position.add(globalMove);
+                
+                // Rotate the Baozi mesh inside the group to face movement direction
+                if (moveDir.lengthSq() > 0) {
+                   // Calculate angle for visual mesh
+                   // This is complex on a sphere, simplifying by just rotating the group's child later if needed
+                   // For now, the 'Red Dot' orientation acts as the head.
+                }
+            }
+
+            // Snap Player to Sphere Surface
+            alignToSurface(playerGroup, planetRadius);
+
+            // --- CAMERA FOLLOW ---
+            // Calculate ideal camera position: behind player and slightly up (relative to sphere normal)
+            const playerPos = playerGroup.position.clone();
+            const playerUp = playerPos.clone().normalize();
+            
+            // Offset: Go "up" (away from planet) and "back" (opposite of facing? Hard to define "facing" without velocity)
+            // Let's make a generic third person orbit that looks at the planet center but focuses on player
+            const cameraOffsetHeight = playerUp.clone().multiplyScalar(10); 
+            const cameraOffsetBack = new THREE.Vector3(0,0,10).applyQuaternion(playerGroup.quaternion); // Naive back
+            
+            // Smoother Camera Logic:
+            // Just position camera "above" the player along the radius
+            const camDist = 25;
+            const idealCamPos = playerPos.clone().normalize().multiplyScalar(camDist);
+            
+            // To make it playable, we usually tilt the camera back a bit.
+            // Let's cheat: Put camera further out and look at player.
+            camera.position.lerp(idealCamPos, 0.1);
+            camera.lookAt(playerPos);
+            // Tilt up slightly to see horizon
+            camera.translateY(3);
+
+
+            // --- COLLISION LOGIC ---
+            
+            // 1. Dots
+            dots.forEach(dot => {
+                if (dot.active) {
+                    const dist = playerGroup.position.distanceTo(dot.mesh.position);
+                    if (dist < 1.2) {
+                        dot.active = false;
+                        dot.mesh.visible = false;
+                        score++;
+                        scoreEl.innerText = "Baozi Eaten: " + score;
                         
-                        // 2. 使用【比例】判定，而不是像素距离
-                        const mouthH = Math.hypot(sUp.x - sLow.x, sUp.y - sLow.y); // 嘴高
-                        const mouthW = Math.hypot(sLeft.x - sRight.x, sLeft.y - sRight.y); // 嘴宽
-                        
-                        // 防止除以0
-                        const ratio = mouthH / (mouthW + 1);
-                        
-                        // 判定
-                        mouthData.open = ratio > CONFIG.mouthRatioThreshold;
-                        
-                        // 更新调试信息
-                        debugEl.innerText = `检测中: 张开度 ${ratio.toFixed(2)} (阈值: ${CONFIG.mouthRatioThreshold})`;
-                        debugEl.style.color = mouthData.open ? "#2ed573" : "yellow";
-
-                        if (mouthData.open) {
-                            mouthDotEl.classList.add('mouth-active');
-                            mouthTextEl.innerText = "张开了";
-                            mouthTextEl.style.color = "#2ed573";
-                        } else {
-                            mouthDotEl.classList.remove('mouth-active');
-                            mouthTextEl.innerText = "请张嘴";
-                            mouthTextEl.style.color = "white";
-                        }
+                        // "Munch" effect
+                        bun.scale.set(1.2, 0.8, 1.2);
+                        setTimeout(() => bun.scale.set(1, 0.75, 1), 100);
                     }
-                } else {
-                    debugEl.innerText = "未检测到人脸 - 请调整光线或距离";
-                    debugEl.style.color = "red";
                 }
-            } catch (e) {
-                console.error(e);
-            }
-        }
-        requestAnimationFrame(detectFaceLoop);
-    }
+            });
 
-    class GameItem {
-        constructor() {
-            this.type = Math.random() < 0.2 ? 'bomb' : 'bun';
-            
-            // X坐标随机，限制在屏幕内
-            this.x = Math.random() * (screenW - 60) + 30;
-            this.y = -50;
-            this.size = 40;
-            
-            this.speed = Math.random() * 4 + CONFIG.baseSpeed + (score / 10);
-            this.delete = false;
-        }
-
-        update() {
-            this.y += this.speed;
-            if (this.y > screenH + 50) this.delete = true;
-        }
-
-        draw(ctx) {
-            ctx.beginPath();
-            if (this.type === 'bun') {
-                ctx.fillStyle = "#ffffff";
-                ctx.arc(this.x, this.y, this.size/2, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.strokeStyle = "#e0e0e0";
-                ctx.lineWidth = 2;
-                ctx.stroke();
-                // 褶皱
-                ctx.beginPath();
-                ctx.moveTo(this.x - 10, this.y - 10);
-                ctx.lineTo(this.x + 10, this.y + 10);
-                ctx.stroke();
-            } else {
-                ctx.fillStyle = "#333333";
-                ctx.arc(this.x, this.y, this.size/2, 0, Math.PI * 2);
-                ctx.fill();
-                // 红色中心
-                ctx.fillStyle = "red";
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, 8, 0, Math.PI * 2);
-                ctx.fill();
-                // 叹号
-                ctx.fillStyle = "white";
-                ctx.font = "12px Arial";
-                ctx.textAlign = "center";
-                ctx.fillText("!", this.x, this.y + 4);
-            }
-        }
-    }
-
-    function startGame() {
-        AudioSys.init();
-        overlayEl.classList.add('hidden');
-        isGameRunning = true;
-        score = 0;
-        items = [];
-        scoreEl.innerText = "得分: 0";
-        timerEl.innerText = "时间: " + CONFIG.gameDuration;
-        
-        items.push(new GameItem()); 
-        lastSpawnTime = 0;
-        
-        gameStartTime = performance.now();
-        gameLoop(gameStartTime);
-    }
-
-    function gameOver(isTimeUp = false) {
-        isGameRunning = false;
-        
-        if (isTimeUp) {
-            AudioSys.playTimeUp();
-            overlayTitle.innerText = "⏰ 时间到！";
-        } else {
-            AudioSys.playExplosion();
-            overlayTitle.innerText = "💥 游戏结束";
-        }
-        
-        overlayDesc.innerText = `最终得分: ${score}`;
-        startBtn.innerText = "再玩一次";
-        overlayEl.classList.remove('hidden');
-    }
-
-    function gameLoop(timestamp) {
-        // 无论游戏是否运行，都绘制调试点，方便找位置
-        if (debugPoints.length > 0) {
-            // 如果游戏没运行，先清空一下画布(避免重叠)，否则游戏循环会清空
-            if (!isGameRunning) ctx.clearRect(0, 0, screenW, screenH);
-            
-            // 绘制红点
-            ctx.fillStyle = "red";
-            for (let p of debugPoints) {
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        }
-
-        if (!isGameRunning) {
-            requestAnimationFrame(gameLoop);
-            return;
-        }
-
-        // 正常游戏循环
-        ctx.clearRect(0, 0, screenW, screenH);
-        
-        // 重绘红点 (在清空后)
-        if (debugPoints.length > 0) {
-            ctx.fillStyle = "red";
-            for (let p of debugPoints) {
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        }
-
-        const elapsed = (timestamp - gameStartTime) / 1000;
-        const remaining = Math.max(0, Math.ceil(CONFIG.gameDuration - elapsed));
-        
-        timerEl.innerText = "时间: " + remaining;
-        
-        if (remaining <= 10) {
-            timerEl.style.color = "#ff4757";
-        } else {
-            timerEl.style.color = "#00ccff";
-        }
-
-        if (remaining <= 0) {
-            gameOver(true);
-            return;
-        }
-
-        let currentSpawnRate = Math.max(
-            CONFIG.minSpawnRate, 
-            CONFIG.initialSpawnRate - (score * 10) 
-        );
-
-        if (!lastSpawnTime || timestamp - lastSpawnTime > currentSpawnRate) {
-            items.push(new GameItem());
-            
-            if (score > 10 && Math.random() < 0.4) {
-                items.push(new GameItem()); 
-            }
-            if (score > 30 && Math.random() < 0.4) {
-                items.push(new GameItem()); 
-            }
-
-            lastSpawnTime = timestamp;
-        }
-
-        // 绘制嘴巴状态圈
-        if (mouthData.open) {
-            ctx.strokeStyle = "#2ed573";
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.arc(mouthData.x, mouthData.y, 30, 0, Math.PI * 2);
-            ctx.stroke();
-        }
-
-        // 更新物体
-        for (let i = items.length - 1; i >= 0; i--) {
-            let item = items[i];
-            item.update();
-            item.draw(ctx);
-
-            let dist = Math.sqrt((item.x - mouthData.x) ** 2 + (item.y - mouthData.y) ** 2);
-            
-            if (dist < 40 && mouthData.open) {
-                if (item.type === 'bun') {
-                    score++;
-                    scoreEl.innerText = "得分: " + score;
-                    AudioSys.playEat();
-                    item.delete = true;
-                    // 显示 +1
-                    ctx.fillStyle = "yellow";
-                    ctx.font = "bold 24px Arial";
-                    ctx.fillText("+1", mouthData.x, mouthData.y - 40);
-                } else {
-                    gameOver(false);
-                    return; 
+            // 2. Ghosts (Simple Chasing AI)
+            ghosts.forEach(ghost => {
+                const gGroup = ghost.group;
+                
+                // Move towards player
+                const direction = new THREE.Vector3().subVectors(playerGroup.position, gGroup.position).normalize();
+                gGroup.position.add(direction.multiplyScalar(ghost.speed));
+                
+                // Snap ghost to surface
+                alignToSurface(gGroup, planetRadius);
+                
+                // Hit check
+                if (playerGroup.position.distanceTo(gGroup.position) < 1.5) {
+                    // Game Over visual (turn red)
+                    bunMat.color.setHex(0xff0000);
+                    scoreEl.innerText = "GAME OVER! Score: " + score;
+                    scoreEl.style.color = "red";
                 }
-            }
+            });
 
-            if (item.delete) {
-                items.splice(i, 1);
-            }
+            // Animation for dots (spin)
+            dots.forEach(d => {
+                if(d.active) d.mesh.rotation.y += 0.05;
+            });
+
+            renderer.render(scene, camera);
         }
 
-        requestAnimationFrame(gameLoop);
-    }
+        animate();
 
-    main();
-</script>
+        // Handle Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+    </script>
 </body>
 </html>
