@@ -1,191 +1,376 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Baozi Planet 3D</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>包子星球大冒险 (Baozi Planet)</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #111; font-family: 'Courier New', Courier, monospace; }
-        #score-board {
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #050510; /* 深空蓝背景 */
+            font-family: 'Microsoft YaHei', sans-serif;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        #game-canvas { display: block; width: 100vw; height: 100vh; }
+        
+        #ui-layer {
             position: absolute;
             top: 20px;
             left: 20px;
             color: white;
-            font-size: 24px;
-            font-weight: bold;
+            pointer-events: none;
+            text-shadow: 2px 2px 4px #000;
             z-index: 10;
-            text-shadow: 2px 2px #000;
         }
-        #controls {
+        h1 { margin: 0; font-size: 24px; color: #ffcc00; }
+        p { margin: 5px 0 0 0; font-size: 14px; color: #ccc; }
+        #score { font-size: 32px; font-weight: bold; }
+        
+        #joystick-hint {
             position: absolute;
-            bottom: 20px;
+            bottom: 50px;
             width: 100%;
             text-align: center;
-            color: rgba(255, 255, 255, 0.7);
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 14px;
             pointer-events: none;
         }
+
+        #game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            text-align: center;
+            display: none;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 30px;
+            border-radius: 15px;
+            border: 2px solid #ffcc00;
+            z-index: 20;
+            min-width: 200px;
+        }
+        button {
+            background: #ffcc00;
+            border: none;
+            padding: 12px 30px;
+            font-size: 18px;
+            cursor: pointer;
+            margin-top: 20px;
+            border-radius: 25px;
+            pointer-events: auto;
+            font-weight: bold;
+            color: #333;
+        }
+        button:hover { background: #ffaa00; }
     </style>
 </head>
 <body>
-    <div id="score-board">Baozi Eaten: 0</div>
-    <div id="controls">Use Arrow Keys or WASD to Move</div>
+
+    <div id="ui-layer">
+        <h1>包子星球大冒险</h1>
+        <p>操作：按住屏幕拖动 或 WASD</p>
+        <div>得分: <span id="score">0</span> / <span id="total-dots">0</span></div>
+    </div>
+
+    <div id="joystick-hint">按住屏幕任意位置指引方向</div>
+
+    <div id="game-over">
+        <h2 id="end-title">被吃掉啦！</h2>
+        <p>最终得分: <span id="end-score">0</span></p>
+        <button onclick="location.reload()">再来一笼</button>
+    </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
-        // --- 1. SETUP ---
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x202030);
-        scene.fog = new THREE.Fog(0x202030, 20, 60);
+        const CONFIG = {
+            planet: {
+                radius: 18,           // 稍微缩小星球半径，增加曲率感
+                color: 0x55aa66,      // 改为草地绿，更有小星球的感觉
+                waterColor: 0x3366ff
+            },
+            baozi: {
+                color: 0xffffff,
+                dotColor: 0xff3333,
+                speed: 0.32,
+                size: 1.2
+            },
+            ghost: {
+                count: 3,
+                color: 0xaa44aa,
+                baseSpeed: 0.07,
+                size: 1.0
+            },
+            dots: {
+                count: 40,
+                color: 0xffd700,
+                size: 0.35
+            },
+            camera: {
+                distance: 30,         // 拉近镜头
+                height: 12,
+                fov: 75               // 广角，增强透视畸变 (Tiny Planet 效果)
+            }
+        };
 
-        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.shadowMap.enabled = true;
-        document.body.appendChild(renderer.domElement);
+        let scene, camera, renderer;
+        let playerGroup;
+        let planetMesh;
+        let ghosts = [];
+        let dots = [];
+        let score = 0;
+        let isGameOver = false;
+        
+        let keys = { w:false, a:false, s:false, d:false };
+        let inputState = { 
+            isTouching: false, 
+            x: 0, 
+            y: 0,
+            centerX: window.innerWidth / 2,
+            centerY: window.innerHeight / 2
+        };
 
-        // --- 2. THE TINY PLANET ---
-        const planetRadius = 15;
-        const planetGeometry = new THREE.SphereGeometry(planetRadius, 64, 64);
-        const planetMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x445566, 
-            roughness: 0.8,
-            flatShading: true
-        });
-        const planet = new THREE.Mesh(planetGeometry, planetMaterial);
-        planet.receiveShadow = true;
-        scene.add(planet);
+        function init() {
+            if (typeof THREE === 'undefined') {
+                alert("Three.js 加载失败，请检查网络连接。");
+                return;
+            }
 
-        // Grid helper for "Tron/Cyber" vibe
-        const wireframe = new THREE.WireframeGeometry(planetGeometry);
-        const line = new THREE.LineSegments(wireframe);
-        line.material.depthTest = false;
-        line.material.opacity = 0.15;
-        line.material.transparent = true;
-        line.material.color = new THREE.Color(0x00ffff);
-        scene.add(line);
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x050510);
+            scene.fog = new THREE.Fog(0x050510, 25, 60);
 
-        // --- 3. THE PLAYER (BAOZI) ---
-        const playerGroup = new THREE.Group();
-        scene.add(playerGroup);
+            // 修改 FOV 为 75，产生更强的广角效果
+            camera = new THREE.PerspectiveCamera(CONFIG.camera.fov, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
 
-        // Bun Body
-        const bunGeo = new THREE.SphereGeometry(0.8, 32, 32);
-        // Flatten bottom slightly
-        bunGeo.applyMatrix4(new THREE.Matrix4().makeScale(1, 0.75, 1)); 
-        const bunMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
-        const bun = new THREE.Mesh(bunGeo, bunMat);
-        bun.position.y = 0.4;
-        bun.castShadow = true;
-        playerGroup.add(bun);
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
 
-        // The Red Dot (Char Siu Bao style)
-        const dotGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.1, 16);
-        const dotMat = new THREE.MeshStandardMaterial({ color: 0xff3333 });
-        const dot = new THREE.Mesh(dotGeo, dotMat);
-        dot.position.y = 1.05; // Sit on top
-        playerGroup.add(dot);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(40, 60, 40);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            dirLight.shadow.camera.left = -25;
+            dirLight.shadow.camera.right = 25;
+            dirLight.shadow.camera.top = 25;
+            dirLight.shadow.camera.bottom = -25;
+            scene.add(dirLight);
 
-        // Initial Position (Top of planet)
-        playerGroup.position.set(0, planetRadius, 0);
+            createWorld();
+            setupInputs();
+            
+            window.addEventListener('resize', onWindowResize, false);
+            animate();
+        }
 
-        // --- 4. COLLECTIBLES (DOTS) ---
-        const dots = [];
-        const dotCount = 40;
-        const dotGeoGlobal = new THREE.SphereGeometry(0.3, 8, 8);
-        const dotMatGlobal = new THREE.MeshStandardMaterial({ color: 0xffd700, emissive: 0xaa6600 });
+        function setupInputs() {
+            window.addEventListener('keydown', (e) => handleKey(e, true));
+            window.addEventListener('keyup', (e) => handleKey(e, false));
 
-        function createDots() {
-            for(let i=0; i<dotCount; i++) {
-                const mesh = new THREE.Mesh(dotGeoGlobal, dotMatGlobal);
-                
-                // Random point on sphere surface
-                const phi = Math.acos( -1 + ( 2 * i ) / dotCount );
-                const theta = Math.sqrt( dotCount * Math.PI ) * phi;
+            const canvas = renderer.domElement;
+            canvas.addEventListener('pointerdown', (e) => {
+                if(isGameOver) return;
+                inputState.isTouching = true;
+                updateInputPos(e);
+            });
+            canvas.addEventListener('pointermove', (e) => {
+                if (inputState.isTouching) {
+                    updateInputPos(e);
+                }
+            });
+            const endTouch = () => { inputState.isTouching = false; };
+            canvas.addEventListener('pointerup', endTouch);
+            canvas.addEventListener('pointercancel', endTouch);
+            canvas.addEventListener('pointerleave', endTouch);
+        }
 
-                mesh.position.setFromSphericalCoords(planetRadius + 0.5, phi, theta);
-                
-                // Align to planet center
-                mesh.lookAt(0,0,0);
-                
+        function updateInputPos(e) {
+            inputState.x = e.clientX;
+            inputState.y = e.clientY;
+            inputState.centerX = window.innerWidth / 2;
+            inputState.centerY = window.innerHeight / 2;
+        }
+
+        function handleKey(e, isDown) {
+            const key = e.key.toLowerCase();
+            if (['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(key)) {
+                if (key === 'w' || key === 'arrowup') keys.w = isDown;
+                if (key === 's' || key === 'arrowdown') keys.s = isDown;
+                if (key === 'a' || key === 'arrowleft') keys.a = isDown;
+                if (key === 'd' || key === 'arrowright') keys.d = isDown;
+            }
+        }
+
+        function createWorld() {
+            // A. 星球 (草地)
+            const planetGeo = new THREE.SphereGeometry(CONFIG.planet.radius, 64, 64);
+            const planetMat = new THREE.MeshStandardMaterial({ 
+                color: CONFIG.planet.color,
+                roughness: 1.0,
+                flatShading: true // 低多边形风格
+            });
+            planetMesh = new THREE.Mesh(planetGeo, planetMat);
+            planetMesh.receiveShadow = true;
+            scene.add(planetMesh);
+
+            // B. 包子
+            playerGroup = new THREE.Group();
+            const bunGeo = new THREE.SphereGeometry(CONFIG.baozi.size, 32, 32);
+            bunGeo.applyMatrix4(new THREE.Matrix4().makeScale(1, 0.75, 1));
+            const bunMat = new THREE.MeshStandardMaterial({ color: CONFIG.baozi.color });
+            const bunMesh = new THREE.Mesh(bunGeo, bunMat);
+            bunMesh.position.y = CONFIG.baozi.size * 0.4;
+            bunMesh.castShadow = true;
+            
+            const dotGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.1, 16);
+            const dotMat = new THREE.MeshStandardMaterial({ color: CONFIG.baozi.dotColor });
+            const dotMesh = new THREE.Mesh(dotGeo, dotMat);
+            dotMesh.position.y = CONFIG.baozi.size * 0.95;
+
+            playerGroup.add(bunMesh);
+            playerGroup.add(dotMesh);
+            playerGroup.position.set(0, CONFIG.planet.radius, 0);
+            scene.add(playerGroup);
+
+            // C. 装饰物 (增加 Tiny Planet 氛围)
+            createDecorations();
+
+            // D. 豆豆
+            document.getElementById('total-dots').innerText = CONFIG.dots.count;
+            const dotGeometry = new THREE.SphereGeometry(CONFIG.dots.size, 8, 8);
+            const dotMaterial = new THREE.MeshStandardMaterial({ 
+                color: CONFIG.dots.color, 
+                emissive: 0xffaa00,
+                emissiveIntensity: 0.6
+            });
+
+            for (let i = 0; i < CONFIG.dots.count; i++) {
+                const mesh = new THREE.Mesh(dotGeometry, dotMaterial);
+                let safePos = false;
+                // 确保豆豆不会生成在树里面 (简单的随机尝试)
+                while(!safePos) {
+                    placeOnSphereRandomly(mesh, CONFIG.planet.radius + 0.5);
+                    safePos = true; // 这里简化处理，未来可以加碰撞检测
+                }
                 scene.add(mesh);
                 dots.push({ mesh: mesh, active: true });
             }
-        }
-        createDots();
 
-        // --- 5. GHOSTS (The "Steamers") ---
-        const ghosts = [];
-        const ghostCount = 3;
-        
-        function createGhosts() {
-            const ghostGeo = new THREE.CapsuleGeometry(0.6, 1, 4, 8);
-            const ghostMat = new THREE.MeshStandardMaterial({ color: 0xff00ff, transparent: true, opacity: 0.9 });
-            
-            for(let i=0; i<ghostCount; i++) {
-                const g = new THREE.Group();
-                const mesh = new THREE.Mesh(ghostGeo, ghostMat);
-                mesh.position.y = 0.8;
-                mesh.castShadow = true;
-                g.add(mesh);
+            // E. 幽灵
+            for (let i = 0; i < CONFIG.ghost.count; i++) {
+                const gGroup = new THREE.Group();
+                const ghostMesh = createCapsuleMesh(CONFIG.ghost.size * 0.6, CONFIG.ghost.size, CONFIG.ghost.color);
+                ghostMesh.position.y = CONFIG.ghost.size * 0.5;
+                ghostMesh.castShadow = true;
                 
-                // Spawn randomly
-                const v = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize().multiplyScalar(planetRadius);
-                g.position.copy(v);
+                const eyeGeo = new THREE.SphereGeometry(0.2, 8, 8);
+                const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                const eyeLeft = new THREE.Mesh(eyeGeo, eyeMat);
+                const eyeRight = new THREE.Mesh(eyeGeo, eyeMat);
+                eyeLeft.position.set(-0.3, CONFIG.ghost.size * 0.5 + 0.3, 0.35);
+                eyeRight.position.set(0.3, CONFIG.ghost.size * 0.5 + 0.3, 0.35);
+                ghostMesh.add(eyeLeft);
+                ghostMesh.add(eyeRight);
+
+                gGroup.add(ghostMesh);
                 
-                scene.add(g);
-                ghosts.push({ group: g, speed: 0.03 + (Math.random() * 0.02) });
+                let safePosFound = false;
+                while(!safePosFound) {
+                    placeOnSphereRandomly(gGroup, CONFIG.planet.radius);
+                    if(gGroup.position.distanceTo(playerGroup.position) > 8) {
+                        safePosFound = true;
+                    }
+                }
+                
+                scene.add(gGroup);
+                ghosts.push({ 
+                    group: gGroup, 
+                    speed: CONFIG.ghost.baseSpeed + Math.random() * 0.03 
+                });
             }
         }
-        createGhosts();
 
-        // --- 6. LIGHTING ---
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-        scene.add(ambientLight);
+        // 新增：生成装饰物 (树木和石头)
+        function createDecorations() {
+            // 1. 树木
+            const treeCount = 18;
+            for(let i=0; i<treeCount; i++) {
+                const treeGroup = new THREE.Group();
+                
+                // 树干
+                const trunkGeo = new THREE.CylinderGeometry(0.2, 0.35, 1.2, 5);
+                const trunkMat = new THREE.MeshStandardMaterial({ color: 0x8B4513, flatShading: true });
+                const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+                trunk.position.y = 0.6; // 树干中心高度
+                trunk.castShadow = true;
+                treeGroup.add(trunk);
 
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        dirLight.position.set(50, 100, 50);
-        dirLight.castShadow = true;
-        dirLight.shadow.camera.top = 20;
-        dirLight.shadow.camera.bottom = -20;
-        dirLight.shadow.camera.left = -20;
-        dirLight.shadow.camera.right = 20;
-        scene.add(dirLight);
+                // 树叶 (圆锥体)
+                const leavesGeo = new THREE.ConeGeometry(1.2, 2.5, 5);
+                const leavesMat = new THREE.MeshStandardMaterial({ color: 0x228B22, flatShading: true });
+                const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+                leaves.position.y = 1.8;
+                leaves.castShadow = true;
+                treeGroup.add(leaves);
 
-        // --- 7. GAME LOGIC & PHYSICS ---
-        let score = 0;
-        const scoreEl = document.getElementById('score-board');
-        const keys = { w:false, a:false, s:false, d:false };
-
-        window.addEventListener('keydown', (e) => {
-            const k = e.key.toLowerCase();
-            if(keys.hasOwnProperty(k) || k.startsWith('arrow')) {
-                if(k === 'w' || k === 'arrowup') keys.w = true;
-                if(k === 's' || k === 'arrowdown') keys.s = true;
-                if(k === 'a' || k === 'arrowleft') keys.a = true;
-                if(k === 'd' || k === 'arrowright') keys.d = true;
+                placeOnSphereRandomly(treeGroup, CONFIG.planet.radius);
+                scene.add(treeGroup);
             }
-        });
 
-        window.addEventListener('keyup', (e) => {
-            const k = e.key.toLowerCase();
-            if(keys.hasOwnProperty(k) || k.startsWith('arrow')) {
-                if(k === 'w' || k === 'arrowup') keys.w = false;
-                if(k === 's' || k === 'arrowdown') keys.s = false;
-                if(k === 'a' || k === 'arrowleft') keys.a = false;
-                if(k === 'd' || k === 'arrowright') keys.d = false;
+            // 2. 石头
+            const rockCount = 12;
+            for(let i=0; i<rockCount; i++) {
+                const rockGeo = new THREE.DodecahedronGeometry(Math.random() * 0.4 + 0.3);
+                const rockMat = new THREE.MeshStandardMaterial({ color: 0x777777, flatShading: true });
+                const rock = new THREE.Mesh(rockGeo, rockMat);
+                rock.castShadow = true;
+                
+                placeOnSphereRandomly(rock, CONFIG.planet.radius);
+                // 稍微埋进土里一点
+                rock.position.normalize().multiplyScalar(CONFIG.planet.radius - 0.1); 
+                scene.add(rock);
             }
-        });
+        }
 
-        // Helper: Align object to sphere surface
-        function alignToSurface(obj, radius) {
-            // 1. Get current position direction from center
+        function createCapsuleMesh(radius, height, color) {
+            const group = new THREE.Group();
+            const material = new THREE.MeshStandardMaterial({ color: color });
+            const cylinderGeo = new THREE.CylinderGeometry(radius, radius, height, 16);
+            const cylinder = new THREE.Mesh(cylinderGeo, material);
+            cylinder.position.y = height / 2;
+            group.add(cylinder);
+            const topSphereGeo = new THREE.SphereGeometry(radius, 16, 16);
+            const topSphere = new THREE.Mesh(topSphereGeo, material);
+            topSphere.position.y = height;
+            group.add(topSphere);
+            const bottomSphere = new THREE.Mesh(topSphereGeo, material);
+            bottomSphere.position.y = 0;
+            group.add(bottomSphere);
+            return group;
+        }
+
+        function placeOnSphereRandomly(obj, radius) {
+            const phi = Math.random() * Math.PI * 2;
+            const theta = Math.acos(2 * Math.random() - 1);
+            obj.position.setFromSphericalCoords(radius, theta, phi);
+            alignToSurface(obj);
+        }
+
+        function alignToSurface(obj) {
             const up = obj.position.clone().normalize();
-            
-            // 2. Set position exactly on radius (prevents drifting off into space)
-            obj.position.copy(up.multiplyScalar(radius));
-            
-            // 3. Rotate object so its Y-axis matches the "Up" vector (normal)
             const quaternion = new THREE.Quaternion();
             quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), up);
             obj.quaternion.copy(quaternion);
@@ -194,130 +379,137 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            // --- PLAYER MOVEMENT ---
-            const speed = 0.15;
-            const moveDir = new THREE.Vector3(0, 0, 0);
-
-            // Calculate local movement direction based on camera vs player
-            if (keys.w) moveDir.z -= 1;
-            if (keys.s) moveDir.z += 1;
-            if (keys.a) moveDir.x -= 1;
-            if (keys.d) moveDir.x += 1;
-
-            if (moveDir.length() > 0) {
-                moveDir.normalize().multiplyScalar(speed);
-                
-                // We need to move the player tangentially to the sphere.
-                // Current player Up vector
-                const up = playerGroup.position.clone().normalize();
-                
-                // Simple approach: Move in 3D space, then snap back to sphere
-                // Get Camera's basis to determine "Forward" relative to view
-                const camForward = new THREE.Vector3(); 
-                camera.getWorldDirection(camForward);
-                
-                // Project camera forward onto the plane defined by player's Up vector
-                // formula: v_proj = v - (v . n) * n
-                camForward.sub(up.clone().multiplyScalar(camForward.dot(up))).normalize();
-                
-                const camRight = new THREE.Vector3().crossVectors(camForward, up).normalize(); // Note: Cross order matters
-                
-                // Calculate actual move vector in world space
-                const globalMove = new THREE.Vector3()
-                    .addScaledVector(camForward, -moveDir.z)
-                    .addScaledVector(camRight, moveDir.x);
-
-                playerGroup.position.add(globalMove);
-                
-                // Rotate the Baozi mesh inside the group to face movement direction
-                if (moveDir.lengthSq() > 0) {
-                   // Calculate angle for visual mesh
-                   // This is complex on a sphere, simplifying by just rotating the group's child later if needed
-                   // For now, the 'Red Dot' orientation acts as the head.
-                }
+            if (isGameOver) {
+                scene.rotation.y += 0.002;
+                renderer.render(scene, camera);
+                return;
             }
 
-            // Snap Player to Sphere Surface
-            alignToSurface(playerGroup, planetRadius);
-
-            // --- CAMERA FOLLOW ---
-            // Calculate ideal camera position: behind player and slightly up (relative to sphere normal)
-            const playerPos = playerGroup.position.clone();
-            const playerUp = playerPos.clone().normalize();
+            updatePlayer();
+            updateGhosts();
+            updateCamera();
             
-            // Offset: Go "up" (away from planet) and "back" (opposite of facing? Hard to define "facing" without velocity)
-            // Let's make a generic third person orbit that looks at the planet center but focuses on player
-            const cameraOffsetHeight = playerUp.clone().multiplyScalar(10); 
-            const cameraOffsetBack = new THREE.Vector3(0,0,10).applyQuaternion(playerGroup.quaternion); // Naive back
-            
-            // Smoother Camera Logic:
-            // Just position camera "above" the player along the radius
-            const camDist = 25;
-            const idealCamPos = playerPos.clone().normalize().multiplyScalar(camDist);
-            
-            // To make it playable, we usually tilt the camera back a bit.
-            // Let's cheat: Put camera further out and look at player.
-            camera.position.lerp(idealCamPos, 0.1);
-            camera.lookAt(playerPos);
-            // Tilt up slightly to see horizon
-            camera.translateY(3);
-
-
-            // --- COLLISION LOGIC ---
-            
-            // 1. Dots
-            dots.forEach(dot => {
-                if (dot.active) {
-                    const dist = playerGroup.position.distanceTo(dot.mesh.position);
-                    if (dist < 1.2) {
-                        dot.active = false;
-                        dot.mesh.visible = false;
-                        score++;
-                        scoreEl.innerText = "Baozi Eaten: " + score;
-                        
-                        // "Munch" effect
-                        bun.scale.set(1.2, 0.8, 1.2);
-                        setTimeout(() => bun.scale.set(1, 0.75, 1), 100);
-                    }
-                }
-            });
-
-            // 2. Ghosts (Simple Chasing AI)
-            ghosts.forEach(ghost => {
-                const gGroup = ghost.group;
-                
-                // Move towards player
-                const direction = new THREE.Vector3().subVectors(playerGroup.position, gGroup.position).normalize();
-                gGroup.position.add(direction.multiplyScalar(ghost.speed));
-                
-                // Snap ghost to surface
-                alignToSurface(gGroup, planetRadius);
-                
-                // Hit check
-                if (playerGroup.position.distanceTo(gGroup.position) < 1.5) {
-                    // Game Over visual (turn red)
-                    bunMat.color.setHex(0xff0000);
-                    scoreEl.innerText = "GAME OVER! Score: " + score;
-                    scoreEl.style.color = "red";
-                }
-            });
-
-            // Animation for dots (spin)
-            dots.forEach(d => {
-                if(d.active) d.mesh.rotation.y += 0.05;
-            });
-
             renderer.render(scene, camera);
         }
 
-        animate();
+        function updatePlayer() {
+            let moveStep = new THREE.Vector3(0, 0, 0);
 
-        // Handle Resize
-        window.addEventListener('resize', () => {
+            if (inputState.isTouching) {
+                const dx = inputState.x - inputState.centerX;
+                const dy = inputState.y - inputState.centerY;
+                if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+                    moveStep.x = dx;
+                    moveStep.z = dy; 
+                }
+            } else {
+                if (keys.w) moveStep.z -= 1;
+                if (keys.s) moveStep.z += 1;
+                if (keys.a) moveStep.x -= 1;
+                if (keys.d) moveStep.x += 1;
+            }
+
+            if (moveStep.lengthSq() > 0) {
+                const camDir = new THREE.Vector3();
+                camera.getWorldDirection(camDir);
+                const playerUp = playerGroup.position.clone().normalize();
+                
+                camDir.projectOnPlane(playerUp).normalize();
+                const camRight = new THREE.Vector3().crossVectors(camDir, playerUp).normalize();
+
+                const inputVec = moveStep.clone().normalize();
+                const moveVec = new THREE.Vector3()
+                    .addScaledVector(camDir, -inputVec.z)
+                    .addScaledVector(camRight, inputVec.x)
+                    .normalize()
+                    .multiplyScalar(CONFIG.baozi.speed);
+
+                playerGroup.position.add(moveVec);
+                playerGroup.position.normalize().multiplyScalar(CONFIG.planet.radius);
+                alignToSurface(playerGroup);
+                
+                // 旋转模型朝向移动方向 (视觉优化)
+                // 计算在切平面上的移动角度
+                // 这里为了简化，我们让包子内部的Mesh旋转，而不是整个Group (因为Group还要负责alignToSurface)
+                // 暂时略过，保持红点朝向即可
+            }
+
+            dots.forEach(dot => {
+                if (dot.active) {
+                    if (playerGroup.position.distanceTo(dot.mesh.position) < 1.5) {
+                        dot.active = false;
+                        dot.mesh.visible = false;
+                        score++;
+                        document.getElementById('score').innerText = score;
+                        playerGroup.scale.set(1.3, 1.3, 1.3);
+                        setTimeout(() => playerGroup.scale.set(1, 1, 1), 100);
+                        if(score >= CONFIG.dots.count) gameOver(true);
+                    }
+                }
+            });
+        }
+
+        function updateGhosts() {
+            ghosts.forEach(ghost => {
+                const direction = new THREE.Vector3()
+                    .subVectors(playerGroup.position, ghost.group.position)
+                    .normalize()
+                    .multiplyScalar(ghost.speed);
+                
+                ghost.group.position.add(direction);
+                ghost.group.position.normalize().multiplyScalar(CONFIG.planet.radius);
+                alignToSurface(ghost.group);
+
+                if (playerGroup.position.distanceTo(ghost.group.position) < 1.5) {
+                    gameOver(false);
+                }
+            });
+        }
+
+        function updateCamera() {
+            const playerPos = playerGroup.position;
+            // 保持摄像机在玩家正上方偏后
+            const up = playerPos.clone().normalize();
+            
+            // 计算理想的摄像机位置：在玩家法线方向上延伸，并加上一点偏移
+            const targetPos = playerPos.clone().normalize().multiplyScalar(CONFIG.camera.distance);
+            
+            // 平滑移动
+            camera.position.lerp(targetPos, 0.08);
+            camera.lookAt(playerPos);
+            // 微微抬起视角，不要完全垂直俯视
+            camera.translateY(CONFIG.camera.height * 0.5); 
+        }
+
+        function gameOver(win) {
+            isGameOver = true;
+            const modal = document.getElementById('game-over');
+            const title = document.getElementById('end-title');
+            const endScore = document.getElementById('end-score');
+            
+            modal.style.display = 'block';
+            endScore.innerText = score;
+            
+            if(win) {
+                title.innerText = "包子星球制霸！(胜利)";
+                title.style.color = "#00ff00";
+            } else {
+                title.innerText = "被吃掉啦！(失败)";
+                title.style.color = "#ff3333";
+            }
+        }
+
+        function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-        });
+            inputState.centerX = window.innerWidth / 2;
+            inputState.centerY = window.innerHeight / 2;
+        }
+
+        window.onload = function() {
+            init();
+        };
 
     </script>
 </body>
