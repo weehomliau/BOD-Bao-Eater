@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>吃包子大挑战 - 进阶版</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #1a1a1a;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        #game-wrapper {
+            position: relative;
+            width: 640px;
+            height: 480px;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+            border: 4px solid #333;
+            background: #000;
+        }
+
+        /* 视频层：镜像翻转，让用户像照镜子 */
+        video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1);
+            object-fit: cover;
+            z-index: 1;
+        }
+
+        /* 游戏画布层：同样镜像翻转，以便物体和人脸对齐 */
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1);
+            z-index: 2;
+        }
+
+        /* UI层：不翻转，保证文字正常显示 */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .hud-top {
+            display: flex;
+            justify-content: space-between;
+            padding: 20px;
+        }
+
+        #score-board {
+            color: #ffcc00;
+            font-size: 32px;
+            font-weight: 900;
+            text-shadow: 3px 3px 0 #000;
+            background: rgba(0,0,0,0.5);
+            padding: 5px 15px;
+            border-radius: 20px;
+        }
+
+        #status-indicator {
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            background: rgba(0,0,0,0.5);
+            padding: 5px 15px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: red;
+            transition: background-color 0.2s;
+        }
+
+        #overlay-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.85);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+            pointer-events: auto;
+            text-align: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .hidden { display: none !important; }
+
+        button {
+            background: #ff4757;
+            border: none;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 20px;
+            margin: 10px 2px;
+            cursor: pointer;
+            border-radius: 50px;
+            font-weight: bold;
+            transition: transform 0.1s;
+        }
+        button:active { transform: scale(0.95); }
+        h1 { margin: 0 0 10px 0; color: #ffcc00; }
+        p { font-size: 18px; color: #ccc; max-width: 80%; line-height: 1.5; }
+        
+        .error-msg {
+            background: #330000;
+            border: 1px solid red;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: left;
+            margin-top: 10px;
+        }
+
+        /* 嘴巴张开时的视觉提示 */
+        .mouth-active { background-color: #2ed573 !important; box-shadow: 0 0 10px #2ed573; }
+    </style>
+</head>
+<body>
+
+<div id="game-wrapper">
+    <video id="video" playsinline></video>
+    <canvas id="output"></canvas>
+    
+    <div id="ui-layer">
+        <div class="hud-top">
+            <div id="score-board">得分: 0</div>
+            <div id="status-indicator">
+                <div id="mouth-dot" class="status-dot"></div>
+                <span id="mouth-text">请张大嘴巴</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载/开始/结束 遮罩层 -->
+    <div id="overlay-screen">
+        <h1 id="overlay-title">吃包子大作战</h1>
+        <div id="overlay-content">
+            <p id="overlay-desc">正在初始化 AI 模型，请稍候...</p>
+        </div>
+        <button id="start-btn" class="hidden">开始游戏</button>
+    </div>
+</div>
+
+<!-- 引入 TensorFlow.js 联合包 -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection"></script>
+
+<script>
+    /**
+     * 资源管理与配置
+     */
+    const CONFIG = {
+        width: 640,
+        height: 480,
+        mouthThreshold: 10, 
+        baseSpeed: 3,       
+        spawnRate: 1200     
+    };
+
+    // --- 1. 图片素材 (SVG) ---
+    const bunImg = new Image();
+    bunImg.src = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8IS0t 包子主体 --T4KICA8cGF0aCBkPSJNNTAgMTVDMjAgMTUgNSAzNSA1IDYwQzUgODUgMjUgOTUgNTAgOTVDNzUgOTUgOTUgODUgOTUgNjBDOTUgMzUgODAgMTUgNTAgMTV6IiBmaWxsPSIjRkZGNkUyIiBzdHJva2U9IiNEQ0QcdcMyIiBzdHJva2Utd2lkdGg9IjIiLz4KICA8IS0t 褶皱 --T4KICA8cGF0aCBkPSJNNTAgMTUgQzUwIDE1IDQ1IDM1IDUwIDQ1IEM1NSAzNSA1MCAxNSA1MCAxNSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjRThFMEQ1IiBzdHJva2Utd2lkdGg9IjIiLz4KICA8cGF0aCBkPSJNNDAgMTggQzQwIDE4IDM4IDM1IDQyIDQyIiBmaWxsPSJub25lIiBzdHJva2U9IiNFOEUwRDUiIHN0cm9rZS13aWR0aD0iMiIvPgogIDxwYXRoIGQ9Ik02MCAxOCBDNjAgMTggNjIgMzUgNTggNDIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI0U4RTBENSIgc3Ryb2tlLXdpZHRoPSIyIi8+Cjwvc3ZnPg==";
+
+    const bombImg = new Image();
+    bombImg.src = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8IS0t 炸弹主体 --T4KICA8Y2lyY2xlIGN4PSI1MCIgY3k9IjYwIiByPSIzMCIgZmlsbD0iIzIyMiIvPgogIDwhLS0 高光 --T4KICA8ZWxsaXBzZSBjeD0iNjUiIGN5PSI0NSIgcng9IjgiIHJ5PSI0IiB0cmFuc2Zvcm09InJvdGF0ZSgtdzAgNjUgNDUpIiBmaWxsPSIjNTU1Ii8+CiAgPCEtLS 引信口 --T4KICA8cmVjdCB4PSI0NCIgeT0iMjUiIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMCIgZmlsbD0iIzQ0NCIvPgogIDwhLS0 引线 --T4KICA8cGF0aCBkPSJNNTAgMjUgQzUwIDEwIDcwIDEwIDgwIDUiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI0EwNTAwMCIgc3Ryb2tlLXdpZHRoPSIzIi8+CiAgPCEtLS 火花 --T4KICA8cGF0aCBkPSJNODAgNSBMNzUgMCBNODAgNSBMODUgMCBNODAgNSBMODAgLTEwIiBzdHJva2U9IiNGRkE1MDAiIHN0cm9rZS13aWR0aD0iMiIvPgo8L3N2Zz4=";
+
+    // --- 2. 音效管理器 ---
+    const AudioSys = {
+        ctx: null,
+        init: function() {
+            window.AudioContext = window.AudioContext || window.webkitAudioContext;
+            this.ctx = new AudioContext();
+        },
+        playEat: function() {
+            if (!this.ctx) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.5, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.15);
+        },
+        playExplosion: function() {
+            if (!this.ctx) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(100, this.ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(10, this.ctx.currentTime + 0.5);
+            gain.gain.setValueAtTime(1, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.5);
+        }
+    };
+
+    /**
+     * 核心变量
+     */
+    let detector, video, ctx, canvas;
+    let isGameRunning = false;
+    let isGameOver = false;
+    let score = 0;
+    let items = []; 
+    let lastSpawnTime = 0;
+    let mouthData = { open: false, x: 0, y: 0 };
+    let animationFrameId;
+
+    const scoreEl = document.getElementById('score-board');
+    const mouthDotEl = document.getElementById('mouth-dot');
+    const mouthTextEl = document.getElementById('mouth-text');
+    const overlayEl = document.getElementById('overlay-screen');
+    const overlayTitle = document.getElementById('overlay-title');
+    const overlayDesc = document.getElementById('overlay-desc');
+    const overlayContent = document.getElementById('overlay-content');
+    const startBtn = document.getElementById('start-btn');
+
+    /**
+     * 初始化
+     */
+    async function main() {
+        // --- 0. 关键检查：是否直接双击打开 ---
+        if (window.location.protocol === 'file:') {
+            overlayTitle.innerText = "⚠️ 无法直接运行";
+            overlayContent.innerHTML = `
+                <div class="error-msg">
+                    <p>浏览器安全策略禁止直接通过文件路径 (file://) 访问摄像头。</p>
+                    <p><strong>请使用以下任一方法运行：</strong></p>
+                    <ol style="margin-left: 20px; color: #ffcccc;">
+                        <li>在 VS Code 中安装 <em>Live Server</em> 插件，右键此文件选择 "Open with Live Server"。</li>
+                        <li>如果你有 Python，在文件夹运行: <code>python -m http.server</code>，然后访问 localhost:8000。</li>
+                        <li>将此文件上传到任意 HTTPS 网站服务器。</li>
+                    </ol>
+                </div>
+            `;
+            return; // 终止执行
+        }
+
+        video = document.getElementById('video');
+        canvas = document.getElementById('output');
+        ctx = canvas.getContext('2d');
+
+        canvas.width = CONFIG.width;
+        canvas.height = CONFIG.height;
+        video.width = CONFIG.width;
+        video.height = CONFIG.height;
+
+        // 1. 设置摄像头
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { width: CONFIG.width, height: CONFIG.height },
+                audio: false
+            });
+            video.srcObject = stream;
+            await new Promise(resolve => video.onloadedmetadata = resolve);
+            video.play();
+        } catch (e) {
+            overlayContent.innerHTML = "<p style='color:red'>无法访问摄像头。<br>请检查权限设置，或者确认你是否在使用 HTTPS/Localhost。</p>";
+            return;
+        }
+
+        // 2. 加载模型
+        try {
+            overlayDesc.innerText = "正在初始化 WebGL 后端并加载模型 (首次可能较慢)...";
+            await tf.ready();
+            
+            const modelType = faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh;
+            const detectorConfig = {
+                runtime: 'tfjs', 
+                maxFaces: 1,
+                refineLandmarks: false
+            };
+            
+            detector = await faceLandmarksDetection.createDetector(modelType, detectorConfig);
+            
+            // 模型加载完毕
+            overlayDesc.innerText = "准备就绪！";
+            startBtn.classList.remove('hidden');
+            startBtn.addEventListener('click', startGame);
+            
+            detectFaceLoop();
+        } catch (e) {
+            console.error("Initialization error:", e);
+            overlayContent.innerHTML = `<p style='color:red'>模型初始化失败: ${e.message}</p><p>建议使用 Chrome 浏览器并开启硬件加速。</p>`;
+        }
+    }
+
+    /**
+     * 面部追踪
+     */
+    async function detectFaceLoop() {
+        if (detector && !video.paused && !video.ended) {
+            try {
+                const faces = await detector.estimateFaces(video);
+                
+                if (faces.length > 0) {
+                    const keypoints = faces[0].keypoints;
+                    const upperLip = keypoints[13];
+                    const lowerLip = keypoints[14];
+
+                    if (upperLip && lowerLip) {
+                        mouthData.x = upperLip.x; 
+                        mouthData.y = (upperLip.y + lowerLip.y) / 2;
+
+                        const distance = Math.abs(lowerLip.y - upperLip.y);
+                        
+                        if (distance > CONFIG.mouthThreshold) {
+                            mouthData.open = true;
+                            mouthDotEl.classList.add('mouth-active');
+                            mouthTextEl.innerText = "嘴巴已张开";
+                            mouthTextEl.style.color = "#2ed573";
+                        } else {
+                            mouthData.open = false;
+                            mouthDotEl.classList.remove('mouth-active');
+                            mouthTextEl.innerText = "请张大嘴巴";
+                            mouthTextEl.style.color = "white";
+                        }
+                    }
+                }
+            } catch (error) {
+                // 忽略偶尔的帧检测错误
+            }
+        }
+        requestAnimationFrame(detectFaceLoop);
+    }
+
+    /**
+     * 游戏逻辑
+     */
+    class GameItem {
+        constructor() {
+            let bombChance = 0;
+            if (score > 10) bombChance = 0.2;
+            if (score > 30) bombChance = 0.4;
+
+            this.type = Math.random() < bombChance ? 'bomb' : 'bun';
+            
+            this.x = Math.random() * (CONFIG.width - 60) + 30;
+            this.y = -50;
+            this.size = 50;
+            
+            let speedMultiplier = 1 + (score / 50); 
+            this.speed = (Math.random() * 2 + CONFIG.baseSpeed) * speedMultiplier;
+            
+            this.markedForDeletion = false;
+        }
+
+        update() {
+            this.y += this.speed;
+            if (this.y > CONFIG.height) this.markedForDeletion = true;
+        }
+
+        draw(ctx) {
+            const img = this.type === 'bomb' ? bombImg : bunImg;
+            ctx.drawImage(img, this.x - this.size/2, this.y - this.size/2, this.size, this.size);
+        }
+    }
+
+    function startGame() {
+        AudioSys.init();
+        overlayEl.classList.add('hidden');
+        isGameRunning = true;
+        isGameOver = false;
+        score = 0;
+        items = [];
+        scoreEl.innerText = "得分: 0";
+        gameLoop(0);
+    }
+
+    function gameOver() {
+        isGameRunning = false;
+        isGameOver = true;
+        AudioSys.playExplosion();
+        
+        overlayTitle.innerText = "游戏结束！";
+        overlayDesc.innerText = `最终得分: ${score}`;
+        startBtn.innerText = "再玩一次";
+        overlayEl.classList.remove('hidden');
+    }
+
+    function gameLoop(timestamp) {
+        if (!isGameRunning) return;
+
+        ctx.clearRect(0, 0, CONFIG.width, CONFIG.height);
+
+        let currentSpawnRate = Math.max(400, CONFIG.spawnRate - (score * 20));
+        
+        if (timestamp - lastSpawnTime > currentSpawnRate) {
+            items.push(new GameItem());
+            lastSpawnTime = timestamp;
+        }
+
+        if (mouthData.open) {
+            ctx.strokeStyle = "#2ed573";
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(mouthData.x, mouthData.y, 40, 0, Math.PI * 2);
+            ctx.stroke();
+        } else {
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(mouthData.x, mouthData.y, 10, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        for (let i = items.length - 1; i >= 0; i--) {
+            let item = items[i];
+            item.update();
+            item.draw(ctx);
+
+            let dist = Math.sqrt((item.x - mouthData.x) ** 2 + (item.y - mouthData.y) ** 2);
+            
+            if (dist < 45 && mouthData.open) {
+                if (item.type === 'bun') {
+                    score++;
+                    scoreEl.innerText = "得分: " + score;
+                    AudioSys.playEat();
+                    item.markedForDeletion = true;
+                    
+                    ctx.fillStyle = "#ffcc00";
+                    ctx.font = "bold 30px Arial";
+                    ctx.fillText("+1", mouthData.x, mouthData.y - 50);
+
+                } else if (item.type === 'bomb') {
+                    gameOver();
+                    return; 
+                }
+            }
+
+            if (item.markedForDeletion) {
+                items.splice(i, 1);
+            }
+        }
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    main();
+
+</script>
+</body>
+</html>
